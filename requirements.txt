@@ -1,0 +1,5 @@
+psutil==5.6.7
+uvloop==0.14.0
+asyncpg==0.20.1
+async-lru==1.0.2
+click==7.1.1
