@@ -42,12 +42,11 @@ asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
 async def main(
-    src_db_conn_params: DBConnectionParameters,
-    dst_db_conn_params: DBConnectionParameters,
-    ent_ids: Iterable[int],
+    src_db_connection_parameters: DBConnectionParameters,
+    dst_db_connection_parameters: DBConnectionParameters,
 ):
     src_database = SrcDatabase(
-        db_connection_parameters=src_db_conn_params,
+        db_connection_parameters=src_db_connection_parameters,
     )
 
     await src_database.prepare_table_names()
@@ -57,7 +56,7 @@ async def main(
     )
 
     dst_database = DstDatabase(
-        db_connection_parameters=dst_db_conn_params,
+        db_connection_parameters=dst_db_connection_parameters,
     )
     statistic_manager = StatisticManager(dst_database, logger)
 
@@ -92,7 +91,7 @@ async def main(
                 )
 
                 dst_database.fill_revert_tables()
-                dst_database.prepare_fks_with_ent_id()
+                dst_database.prepare_fks_with_key_column()
 
                 await dst_database.disable_triggers()
 
@@ -110,10 +109,10 @@ async def main(
                 dst_pool=dst_pool,
                 src_pool=src_pool,
                 statistic_manager=statistic_manager,
-                ent_ids=ent_ids,
+                key_column_ids=settings.KEY_COLUMN_IDS,
             )
 
-            await asyncio.wait([collector.build_ents_structure()])
+            await asyncio.wait([collector.build_key_column_ids_structure()])
 
             with StatisticIndexer(
                 statistic_manager,
@@ -141,7 +140,7 @@ async def main(
                     dst_pool=dst_pool,
                     src_pool=src_pool,
                     statistic_manager=statistic_manager,
-                    ent_ids=collector.ent_ids,
+                    key_column_ids=collector.key_column_ids,
                 )
 
                 with StatisticIndexer(
@@ -162,7 +161,7 @@ if __name__ == '__main__':
     start = datetime.now()
     logger.info(f'date start - {start}')
 
-    src_db_conn_params = DBConnectionParameters(
+    src_db_connection_parameters = DBConnectionParameters(
         host=settings.SRC_DB_HOST,
         port=settings.SRC_DB_PORT,
         schema=settings.SRC_DB_SCHEMA,
@@ -171,7 +170,7 @@ if __name__ == '__main__':
         password=settings.SRC_DB_PASSWORD,
     )
 
-    dst_db_conn_params = DBConnectionParameters(
+    dst_db_connection_parameters = DBConnectionParameters(
         host=settings.DST_DB_HOST,
         port=settings.DST_DB_PORT,
         schema=settings.DST_DB_SCHEMA,
@@ -182,9 +181,8 @@ if __name__ == '__main__':
 
     asyncio.run(
         main(
-            src_db_conn_params,
-            dst_db_conn_params,
-            settings.ENT_IDS,
+            src_db_connection_parameters=src_db_connection_parameters,
+            dst_db_connection_parameters=dst_db_connection_parameters,
         ),
         debug=settings.TEST_MODE,
     )

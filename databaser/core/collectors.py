@@ -48,13 +48,13 @@ class Collector:
         dst_pool: Pool,
         src_pool: Pool,
         statistic_manager: StatisticManager,
-        ent_ids=(),
+        key_column_ids=(),
     ):
         self._dst_database = dst_database
         self._src_database = src_database
         self._dst_pool = dst_pool
         self._src_pool = src_pool
-        self.ent_ids = ent_ids
+        self.key_column_ids = key_column_ids
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}
@@ -63,15 +63,25 @@ class Collector:
 
         self.content_type_table = {}
 
-    async def _get_enterprise_parents_ids(self, ent_id: int, ent_ids: list):
+    async def _get_key_table_parents_ids(
+        self,
+        key_column_id: int,
+        key_column_ids: list,
+    ):
         async with self._src_pool.acquire() as connection:
-            get_ent_parents_ids_sql = (
-                SQLRepository.get_enterprise_parents_ids_sql_sql(
-                    ent_id=ent_id,
+            get_key_table_parents_ids_sql = (
+                SQLRepository.get_key_table_parents_ids_sql(
+                    key_column_id=key_column_id,
                 )
             )
 
-            tasks = await asyncio.wait([connection.fetch(get_ent_parents_ids_sql)])
+            logger.info(get_key_table_parents_ids_sql)
+
+            tasks = await asyncio.wait(
+                [
+                    connection.fetch(get_key_table_parents_ids_sql)
+                ]
+            )
 
             records = (
                 tasks[0].pop().result() if (
@@ -82,11 +92,11 @@ class Collector:
                 None
             )
 
-            ent_ids.extend([record.get('id') for record in records])
+            key_column_ids.extend([record.get('id') for record in records])
 
-            del get_ent_parents_ids_sql
+            del get_key_table_parents_ids_sql
 
-    async def build_ents_structure(self):
+    async def build_key_column_ids_structure(self):
         """
         Построение дерева учреждений
         выглядит следующим образом -
@@ -97,21 +107,21 @@ class Collector:
         set([1419, 1205, 1407]), set([1359, 1219, 1508, 1415])]
         """
         logger.info("build tree of enterprises for transfer process")
-        ent_ids = list(self.ent_ids)
+        key_column_ids = list(self.key_column_ids)
 
         coroutines = [
-            self._get_enterprise_parents_ids(ent_id, ent_ids)
-            for ent_id in ent_ids
+            self._get_key_table_parents_ids(key_column_id, key_column_ids)
+            for key_column_id in key_column_ids
         ]
 
         if coroutines:
             await asyncio.wait(coroutines)
 
-        self.ent_ids = set(ent_ids)
+        self.key_column_ids = set(key_column_ids)
 
         logger.info(
             f"transferring enterprises - "
-            f"{[str(ent_id) for ent_id in self.ent_ids]}"
+            f"{make_str_from_iterable(self.key_column_ids, with_quotes=True)}"
         )
 
     async def _fill_table_rows_count(self, table_name: str):
@@ -166,16 +176,16 @@ class Collector:
 
         logger.info("заполнение значений счетчиков завершено")
 
-    async def _collect_enterprise_ids(self):
-        logger.info("transfer Enterprise table records...")
+    async def _collect_key_table_ids(self):
+        logger.info("transfer key table records...")
 
-        enterprise_table = self._dst_database.tables["enterprise"]
+        key_table = self._dst_database.tables[settings.KEY_TABLE_NAME]
 
-        enterprise_table.need_imported.update(self.ent_ids)
+        key_table.need_imported.update(self.key_column_ids)
 
-        enterprise_table.is_transferred = True
+        key_table.is_transferred = True
 
-        logger.info("transfer Enterprise table records finished!")
+        logger.info("transfer key table records finished!")
 
     async def _get_constraint_table_ids_part(
         self,
@@ -208,7 +218,7 @@ class Collector:
         self,
         table: DBTable,
         column: DBColumn,
-        ent_ids=(),
+        key_column_ids=(),
         table_pk_ids=(),
         where_conditions_columns=(),
         is_revert=False,
@@ -226,7 +236,7 @@ class Collector:
         constraint_table_ids_sql_list = SQLRepository.get_constraint_table_ids_sql(
             table=table,
             constraint_column=column,
-            ent_ids=ent_ids,
+            key_column_ids=key_column_ids,
             primary_key_ids=table_pk_ids,
             where_conditions_columns=where_conditions_columns,
             is_revert=is_revert,
@@ -256,7 +266,7 @@ class Collector:
         rev_ids = await self._get_constraint_table_ids(
             rev_table,
             fk_column,
-            self.ent_ids,
+            self.key_column_ids,
             table_pk_ids=rev_table_pk_ids,
             is_revert=True,
         )
@@ -273,7 +283,7 @@ class Collector:
         rev_table = self._dst_database.tables[rev_table_name]
         logger.info(f"prepare revert table {rev_table_name}")
 
-        if rev_table.fks_with_ent_id and not table.with_ent_id:
+        if rev_table.fks_with_ent_id and not table.with_key_column:
             return
 
         if rev_table.need_imported:
@@ -336,7 +346,7 @@ class Collector:
         tasks = await asyncio.wait([self._get_constraint_table_ids(
             table,
             table.primary_key,
-            self.ent_ids,
+            self.key_column_ids,
             where_conditions_columns=where_conditions,
         )])
 
@@ -373,7 +383,9 @@ class Collector:
 
         if not table.need_imported:
             all_records = await self._get_constraint_table_ids(
-                table, table.primary_key, ent_ids=self.ent_ids
+                table,
+                table.primary_key,
+                key_column_ids=self.key_column_ids,
             )
 
             table.need_imported.update(all_records)
@@ -389,21 +401,21 @@ class Collector:
     async def _recursively_collecting_fk_table_chunk_data(
         self,
         need_import_ids_chunk,
-        deep_without_ent,
+        deep_without_key_table,
         fk_table,
         stack_tables,
     ):
         dwe = (
-            deep_without_ent - 1
-            if not fk_table.with_ent_id
-            else deep_without_ent
+            deep_without_key_table - 1
+            if not fk_table.with_key_column
+            else deep_without_key_table
         )
 
         await self._recursively_collecting_table_data(
             fk_table,
             need_import_ids_chunk,
             stack_tables,
-            deep_without_ent=dwe,
+            deep_without_key_table=dwe,
         )
 
         del dwe
@@ -414,27 +426,32 @@ class Collector:
         column: DBColumn,
         stack_tables,
         table,
-        deep_without_ent,
+        deep_without_key_table,
         pk_ids,
     ):
         fk_table = self._dst_database.tables[column.constraint_table.name]
 
         # если таблица уже есть в стеке импорта таблиц, то он нас не
-        # интересует; если талица с ent_id, то записи в любом случае
+        # интересует; если талица с key_column, то записи в любом случае
         # будут импортированы
-        if fk_table in stack_tables or fk_table.with_ent_id:
+        if fk_table in stack_tables or fk_table.with_key_column:
             return
 
-        # Если таблица с ent_id, то нет необходимости пробрасывать
+        # Если таблица с key_column, то нет необходимости пробрасывать
         # идентификаторы записей
-        if table.with_ent_id:
+        if table.with_key_column:
             fk_table_ids = await self._get_constraint_table_ids(
-                table, column, ent_ids=self.ent_ids
+                table,
+                column,
+                key_column_ids=self.key_column_ids,
             )
         else:
             pk_ids = pk_ids if not table.is_full_transferred else []
             fk_table_ids = await self._get_constraint_table_ids(
-                table, column, ent_ids=self.ent_ids, table_pk_ids=pk_ids
+                table,
+                column,
+                key_column_ids=self.key_column_ids,
+                table_pk_ids=pk_ids,
             )
 
         # если найдены значения внешних ключей отличающиеся от null, то
@@ -462,7 +479,7 @@ class Collector:
                 coroutines = [
                     self._recursively_collecting_fk_table_chunk_data(
                         need_import_ids_chunk,
-                        deep_without_ent,
+                        deep_without_key_table,
                         fk_table,
                         stack_tables,
                     )
@@ -481,16 +498,16 @@ class Collector:
         table,
         pk_ids,
         stack_tables=(),
-        deep_without_ent=None,
+        deep_without_key_table=None,
     ):
         """
         :param DBTable table:
         :param set pk_ids:
         :return:
         """
-        # if is_revert_rel and not deep_without_ent:
-        if not deep_without_ent:
-            logger.debug("Max deep without ent table")
+        # if is_revert_rel and not deep_without_key_table:
+        if not deep_without_key_table:
+            logger.debug("Max deep without key table")
             return
 
         stack_tables += (table,)
@@ -499,7 +516,7 @@ class Collector:
 
         coroutines = [
             self._recursively_collecting_fk_table_data(
-                column, stack_tables, table, deep_without_ent, pk_ids
+                column, stack_tables, table, deep_without_key_table, pk_ids
             )
             for column in table.not_self_fk_columns
         ]
@@ -515,7 +532,7 @@ class Collector:
         await self._recursively_collecting_table_data(
             table,
             need_import_ids_chunk,
-            deep_without_ent=1,
+            deep_without_key_table=1,
         )
 
         del need_import_ids_chunk[:]
@@ -527,7 +544,7 @@ class Collector:
         need_import_ids = await self._get_constraint_table_ids(
             table=table,
             column=table.primary_key,
-            ent_ids=self.ent_ids,
+            key_column_ids=self.key_column_ids,
         )
 
         if need_import_ids:
@@ -561,16 +578,15 @@ class Collector:
     async def _collect_common_tables_records_ids(self):
         """
         Метод сбора данных для дальнейшего импорта в целевую базу. Первоначально
-        производится сбор данных из таблиц с ent_id и всех таблиц, которые их
+        производится сбор данных из таблиц с key_column и всех таблиц, которые их
         окружают с глубиной рекурсивного обхода 1. Сюда входят таблицы связанные
         через внешние ключи и таблицы ссылающиеся на текущую. После чего
         производится сбор записей таблиц, из которых не был произведен сбор
         данных. Эти таблицы находятся дальше чем одна таблица от таблиц с
-        ent_id.
+        key_column.
         Для верного обхода у таблиц существует параметр
         transferred_rel_tables_percent, который указывает на часть таблиц,
         которая была импортирована
-        :return:
         """
         logger.info("start collecting common tables records ids")
 
@@ -583,17 +599,17 @@ class Collector:
             )
         )
 
-        tables_with_ent_id = list(
+        tables_with_key_column = list(
             filter(
-                lambda t: t.with_ent_id,
+                lambda t: t.with_key_column,
                 tables_without_generics,
             )
         )
 
-        # обход таблиц с ent_id и их соседей
+        # обход таблиц с key_column и их соседей
         coroutines = [
             self._collect_importing_ent_table_records_ids(table)
-            for table in tables_with_ent_id
+            for table in tables_with_key_column
         ]
 
         if coroutines:
@@ -729,7 +745,7 @@ class Collector:
         need_imported = await self._get_constraint_table_ids(
             target_table,
             target_table.primary_key,
-            ent_ids=self.ent_ids,
+            key_column_ids=self.key_column_ids,
             where_conditions_columns=where_conditions,
         )
 
@@ -784,9 +800,9 @@ class Collector:
     async def collect(self):
         with StatisticIndexer(
             self._statistic_manager,
-            TransferringStagesEnum.TRANSFER_ENTERPRISE_TABLE,
+            TransferringStagesEnum.TRANSFER_KEY_TABLE,
         ):
-            await asyncio.wait([self._collect_enterprise_ids()])
+            await asyncio.wait([self._collect_key_table_ids()])
 
         with StatisticIndexer(
             self._statistic_manager,

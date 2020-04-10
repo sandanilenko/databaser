@@ -34,7 +34,10 @@ TEST_MODE = bool(strtobool(os.environ.get('TEST_MODE') or 'False'))
 if TEST_MODE:
     logger.warning('TEST MODE ACTIVATED!!!')
 
-ENT_IDS = os.environ.get('ENT_IDS', '').split(',')
+KEY_TABLE_NAME = os.environ.get('KEY_TABLE_NAME')
+KEY_COLUMN_NAMES = os.environ.get('KEY_COLUMN_NAMES', '').replace(' ', '').split(',')
+KEY_COLUMN_IDS = os.environ.get('KEY_COLUMN_IDS', '').replace(' ', '').split(',')
+
 EXCLUDED_TABLES = os.environ.get('EXCLUDED_TABLES', '').split(',')
 TABLES_WITH_GENERIC_FOREIGN_KEY = os.environ.get(
     'TABLES_WITH_GENERIC_FOREIGN_KEY',
@@ -56,12 +59,12 @@ if not any(
         DST_DB_NAME,
         DST_DB_USER,
         DST_DB_PASSWORD,
-        ENT_IDS,
+        KEY_COLUMN_IDS,
     ]
 ):
     raise Exception('You must send all params!')
 
-ENT_IDS = tuple(map(int, ENT_IDS))
+KEY_COLUMN_IDS = tuple(map(int, KEY_COLUMN_IDS))
 
 VALIDATE_DATA_BEFORE_TRANSFERRING = os.environ.get(
     'VALIDATE_DATA_BEFORE_TRANSFERRING',

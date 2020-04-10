@@ -226,21 +226,20 @@ class DstDatabase(BaseDatabase):
 
         await asyncio.wait(coroutines)
 
-    def prepare_fks_with_ent_id(self):
+    def prepare_fks_with_key_column(self):
         """
-        Метод проставления внешних ключей, которые указывают на таблицы с ent_id
-        Если в таблице имеются ссылки на таблицы с ent_id, то при добавлении
+        Метод проставления внешних ключей, которые указывают на таблицы с key_column
+        Если в таблице имеются ссылки на таблицы с key_column, то при добавлении
         записей стоит опираться только на эти поля
-        :return:
         """
-        logger.info('prepare fks with ent id columns')
+        logger.info('prepare fks with key columns')
 
         for table in self.tables.values():
             for fk_column in table.not_self_fk_columns:
-                if fk_column.constraint_table.with_ent_id:
+                if fk_column.constraint_table.with_key_column:
                     table.fks_with_ent_id.append(fk_column)
 
-        logger.info('finish preparing fks with ent id columns')
+        logger.info('finish preparing fks with key columns')
 
 
 class SrcDatabase(BaseDatabase):
@@ -249,7 +248,8 @@ class SrcDatabase(BaseDatabase):
         :param DBConnectionParameters db_connection_parameters:
         """
         logger.info('init src database')
-        super(SrcDatabase, self).__init__(db_connection_parameters)
+
+        super().__init__(db_connection_parameters)
 
 
 class DBTable(object):
@@ -264,8 +264,8 @@ class DBTable(object):
         'full_count',
         'max_id',
         'columns',
-        '_with_ent_id',
-        '_ent_id_column',
+        '_with_key_column',
+        '_key_column',
         'revert_fk_tables',
         'need_imported',
         'transferred_rel_tables_percent',
@@ -286,8 +286,8 @@ class DBTable(object):
         self.max_id = 0
         self.columns: Dict[str, 'DBColumn'] = {}
 
-        self._with_ent_id = False
-        self._ent_id_column = None
+        self._with_key_column = False
+        self._key_column = None
 
         # хранит названия таблиц которые ссылаются на текущую и признак того,
         # что записи зависимой таблицы были внесены в список для импорта
@@ -306,7 +306,7 @@ class DBTable(object):
     def __str__(self):
         return (
             f'table {self.name} with_fk {self.with_fk}, '
-            f'with_ent_id {self.with_ent_id}, with_self_fk {self.with_self_fk}'
+            f'with_key_column {self.with_key_column}, with_self_fk {self.with_self_fk}'
         )
 
     @property
@@ -354,13 +354,13 @@ class DBTable(object):
 
     @property
     @lru_cache()
-    def ent_id_column(self):
-        return self._ent_id_column
+    def key_column(self):
+        return self._key_column
 
     @property
     @lru_cache()
-    def with_ent_id(self):
-        return self._with_ent_id
+    def with_key_column(self):
+        return self._with_key_column
 
     @property
     @lru_cache()
@@ -432,9 +432,9 @@ class DBTable(object):
 
             self.columns[column_name] = column
 
-        if not self._with_ent_id and column.is_ent_id:
-            self._ent_id_column = column
-            self._with_ent_id = True
+        if not self._with_key_column and column.is_key_column:
+            self._key_column = column
+            self._with_key_column = True
 
         return column
 
@@ -577,10 +577,10 @@ class DBColumn(object):
 
     @property
     @lru_cache()
-    def is_ent_id(self):
+    def is_key_column(self):
         return (
-            self.name == 'ent_id' or 
-            deep_getattr(self.constraint_table, 'name') == 'enterprise'
+            self.name in settings.KEY_COLUMN_NAMES or
+            deep_getattr(self.constraint_table, 'name') == settings.KEY_TABLE_NAME
         )
 
     @property
