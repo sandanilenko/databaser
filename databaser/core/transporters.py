@@ -44,13 +44,13 @@ class Transporter:
         dst_pool: Pool,
         src_pool: Pool,
         statistic_manager: StatisticManager,
-        ent_ids=(),
+        key_column_ids=(),
     ):
         self._dst_database = dst_database
         self._src_database = src_database
         self._dst_pool = dst_pool
         self._src_pool = src_pool
-        self.ent_ids = ent_ids
+        self.key_column_ids = key_column_ids
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}

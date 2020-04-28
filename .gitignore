@@ -130,4 +130,4 @@ dmypy.json
 
 # PyCharm files
 .idea/
-databaser/configuration.env
+configuration.env

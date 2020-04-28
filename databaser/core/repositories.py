@@ -4,6 +4,7 @@ from typing import (
     List,
 )
 
+import settings
 from core.enums import (
     ConstraintTypesEnum,
     DataTypesEnum,
@@ -38,8 +39,8 @@ class SQLRepository:
     CREATE_USER_MAPPING_SQL_TEMPLATE = (
         """
         CREATE USER MAPPING FOR "{dst_user}"
-            SERVER src_server
-            OPTIONS (user '{src_user}', password '{src_password}');
+        SERVER src_server
+        OPTIONS (user '{src_user}', password '{src_password}');
         """
     )
 
@@ -58,7 +59,7 @@ class SQLRepository:
     IMPORT_FOREIGN_SCHEMA_SQL_TEMPLATE = (
         """
         IMPORT FOREIGN SCHEMA "{src_schema}" LIMIT TO ({tables})
-            FROM SERVER src_server INTO "tmp_src_schema" OPTIONS (import_default 'true');
+        FROM SERVER src_server INTO "tmp_src_schema" OPTIONS (import_default 'true');
         """
     )
 
@@ -66,28 +67,28 @@ class SQLRepository:
         truncate {table_names} cascade;
     """
 
-    ENTERPRISE_PARENTS_IDS_SQL_TEMPLATE = """
-        with recursive hierarchy(id, parent_id, "level") as (
-            select id, 
-                parent_id, 
+    KEY_TABLE_PARENTS_IDS_SQL_TEMPLATE = """
+        with recursive hierarchy("id", "parent_id", "level") as (
+            select "{key_table_name}"."id", 
+                "{key_table_name}"."parent_id", 
                 0 
-            from enterprise 
-            where id = {ent_id}
+            from "{key_table_name}" 
+            where "{key_table_name}"."id" = {key_column_id}
 
             union all
 
             select
-                enterprise.id,
-                enterprise.parent_id,
-                hierarchy."level" + 1
-            from enterprise 
-            join hierarchy on enterprise.id = hierarchy.parent_id
+                "{key_table_name}"."id",
+                "{key_table_name}"."parent_id",
+                "hierarchy"."level" + 1
+            from "{key_table_name}" 
+            join "hierarchy" on "{key_table_name}"."id" = "hierarchy"."parent_id"
         )
-        select enterprise.id id 
-        from enterprise 
-        join hierarchy on enterprise.id = hierarchy.id
-        where enterprise.id <> {ent_id}
-        order by hierarchy."level" desc;
+        select "{key_table_name}"."id" id 
+        from "{key_table_name}" 
+        join "hierarchy" on "{key_table_name}"."id" = "hierarchy"."id"
+        where "{key_table_name}"."id" <> {key_column_id}
+        order by "hierarchy"."level" desc;
     """
 
     SELECT_TABLES_NAMES_LIST_SQL_TEMPLATE = """
@@ -258,12 +259,13 @@ class SQLRepository:
         return queries
 
     @classmethod
-    def get_enterprise_parents_ids_sql_sql(
+    def get_key_table_parents_ids_sql(
         cls,
-        ent_id: int,
+        key_column_id: int,
     ):
-        return cls.ENTERPRISE_PARENTS_IDS_SQL_TEMPLATE.format(
-            ent_id=ent_id,
+        return cls.KEY_TABLE_PARENTS_IDS_SQL_TEMPLATE.format(
+            key_table_name=settings.KEY_TABLE_NAME,
+            key_column_id=key_column_id,
         )
 
     @classmethod
@@ -338,7 +340,7 @@ class SQLRepository:
         cls,
         table,
         constraint_column,
-        ent_ids=None,
+        key_column_ids=None,
         primary_key_ids=None,
         where_conditions_columns=None,
         is_revert=False,
@@ -347,7 +349,7 @@ class SQLRepository:
         Метод получения запроса получения идентификаторов таблицы с указанием
         условий
         """
-        ent_ids_str = make_str_from_iterable(ent_ids)
+        key_column_ids_str = make_str_from_iterable(key_column_ids)
 
         primary_key_ids_list = []
 
@@ -357,8 +359,8 @@ class SQLRepository:
         logger.debug(
             f"SQL constraint ids. table name - {table.name}, "
             f"column_name - {constraint_column.name}, "
-            f"ent_id - {str(ent_ids_str)}, "
-            f"with_ent_id - {table.with_ent_id}, "
+            f"key_column_id - {str(key_column_ids_str)}, "
+            f"with_key_column - {table.with_key_column}, "
             f"primary_key_ids - {make_str_from_iterable(primary_key_ids_list[:10])}"
             f" ({len(primary_key_ids_list)})\n"
         )
@@ -384,7 +386,7 @@ class SQLRepository:
             where_conditions = []
 
             for c_name, c_ids in where_conditions_columns.items():
-                if c_name == "ent_id":
+                if c_name in settings.KEY_COLUMN_NAMES:
                     continue
 
                 column = table.get_column_by_name(c_name)
@@ -484,7 +486,7 @@ class SQLRepository:
                     primary_key_ids,
                     table,
                     constraint_column,
-                    ent_ids_str,
+                    key_column_ids_str,
                 )
                 if sql_result:
                     sql_result_list.append(sql_result)
@@ -495,7 +497,7 @@ class SQLRepository:
                 primary_key_ids,
                 table,
                 constraint_column,
-                ent_ids_str,
+                key_column_ids_str,
             )
 
             if sql_result:
@@ -513,7 +515,7 @@ class SQLRepository:
         primary_key_ids,
         table,
         constraint_column,
-        ent_ids_str,
+        key_column_ids_str,
     ):
         # отфильтруем все 1
         where_conditions_filtering = list(
@@ -547,23 +549,23 @@ class SQLRepository:
             else:
                 where_conditions_str = pk_condition_sql
 
-        if table.with_ent_id:
-            ent_id_column = table.ent_id_column
+        if table.with_key_column:
+            key_column = table.key_column
 
-            logger.debug(f"find ent id column - {ent_id_column.name}")
+            logger.debug(f"find key_column - {key_column.name}")
 
-            if ent_ids_str:
-                ent_ids_sql = (
-                    f"{ent_id_column.name} in ({ent_ids_str}) or "
-                    f"{ent_id_column.name} isnull"
+            if key_column_ids_str:
+                key_column_ids_sql = (
+                    f"{key_column.name} in ({key_column_ids_str}) or "
+                    f"{key_column.name} isnull"
                 )
 
                 if where_conditions_str:
                     where_conditions_str = " ".join(
-                        [where_conditions_str, "and", ent_ids_sql]
+                        [where_conditions_str, "and", key_column_ids_sql]
                     )
                 else:
-                    where_conditions_str = ent_ids_sql
+                    where_conditions_str = key_column_ids_sql
 
         if where_conditions_str:
             where_conditions_str = f"where {where_conditions_str}"

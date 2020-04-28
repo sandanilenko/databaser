@@ -44,7 +44,7 @@ class TransferringStagesEnum:
     TRUNCATE_DST_DB_TABLES = 2
     FILLING_TABLES_ROWS_COUNTS = 3
     PREPARING_AND_TRANSFERRING_DATA = 4
-    TRANSFER_ENTERPRISE_TABLE = 5
+    TRANSFER_KEY_TABLE = 5
     COLLECT_COMMON_TABLES_RECORDS_IDS = 6
     COLLECT_GENERIC_TABLES_RECORDS_IDS = 7
     TRANSFERRING_COLLECTED_DATA = 8
@@ -55,7 +55,7 @@ class TransferringStagesEnum:
         TRUNCATE_DST_DB_TABLES: "Truncate destination database tables",
         FILLING_TABLES_ROWS_COUNTS: "Filling tables rows counts",
         PREPARING_AND_TRANSFERRING_DATA: "Preparing and transferring data",
-        TRANSFER_ENTERPRISE_TABLE: "Transfer enterprise table",
+        TRANSFER_KEY_TABLE: "Transfer key table",
         COLLECT_COMMON_TABLES_RECORDS_IDS: "Collect common tables records ids",
         COLLECT_GENERIC_TABLES_RECORDS_IDS: "Collect generic tables records ids",
         TRANSFERRING_COLLECTED_DATA: "Transferring collected data",
