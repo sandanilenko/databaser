@@ -4,6 +4,7 @@ from functools import (
 )
 from typing import (
     Dict,
+    Iterable,
     List,
     Optional,
 )
@@ -21,6 +22,7 @@ from core.helpers import (
     DBConnectionParameters,
     deep_getattr,
     logger,
+    make_chunks,
     make_str_from_iterable,
 )
 from core.repositories import (
@@ -44,6 +46,7 @@ class BaseDatabase(object):
             db_connection_parameters
         )
         self.table_names: Optional[List[str]] = None
+        self._connection_pool: Optional[Pool] = None
 
     @property
     def connection_str(self):
@@ -51,17 +54,31 @@ class BaseDatabase(object):
             self.db_connection_parameters
         )
 
+    @property
+    def connection_pool(self):
+        return self._connection_pool
+
+    @connection_pool.setter
+    def connection_pool(
+        self,
+        pool: Pool,
+    ):
+        self._connection_pool = pool
+
     async def prepare_table_names(self):
-        select_tables_names_list_sq = SQLRepository.get_select_tables_names_list_sql(  # noqa
+        select_tables_names_list_sql = SQLRepository.get_select_tables_names_list_sql(  # noqa
             excluded_tables=settings.EXCLUDED_TABLES,
         )
 
-        tables_names = await self.fetch_raw_sql(select_tables_names_list_sq)
+        async with self._connection_pool.acquire() as connection:
+            table_names = await connection.fetch(
+                query=select_tables_names_list_sql,
+            )
 
-        self.table_names = [
-            table_name_rec[0]
-            for table_name_rec in tables_names
-        ]
+            self.table_names = [
+                table_name_rec[0]
+                for table_name_rec in table_names
+            ]
 
     async def truncate_tables(self):
         """
@@ -152,6 +169,44 @@ class DstDatabase(BaseDatabase):
         self.indexes = set()
         self.indexes_definitions = []
 
+    async def _prepare_chunk_tables(
+        self,
+        chunk_table_names: Iterable[str],
+    ):
+        getting_tables_columns_sql = SQLRepository.get_table_columns_sql(
+            table_names=make_str_from_iterable(
+                iterable=chunk_table_names,
+                with_quotes=True,
+                quote='\'',
+            ),
+        )
+
+        async with self._connection_pool.acquire() as connection:
+            records = await connection.fetch(
+                query=getting_tables_columns_sql,
+            )
+
+        coroutines = [
+            self.tables[table_name].append_column(
+                column_name=column_name,
+                data_type=data_type,
+                ordinal_position=ordinal_position,
+                constraint_table=self.tables.get(constraint_table_name),
+                constraint_type=constraint_type,
+            )
+            for (
+                table_name,
+                column_name,
+                data_type,
+                ordinal_position,
+                constraint_table_name,
+                constraint_type,
+            ) in records
+        ]
+
+        if coroutines:
+            await asyncio.gather(*coroutines)
+
     async def prepare_tables(self):
         logger.info('prepare tables structure for transferring process')
 
@@ -162,56 +217,25 @@ class DstDatabase(BaseDatabase):
             for table_name in self.table_names
         }
 
-        getting_tables_columns_sql = SQLRepository.get_table_columns_sql(
-            table_names=make_str_from_iterable(
-                iterable=self.table_names,
-                with_quotes=True,
-                quote='\'',
-            ),
+        chunks_table_names = make_chunks(
+            iterable=self.table_names,
+            size=settings.TABLES_LIMIT_PER_TRANSACTION,
         )
 
-        records = await self.fetch_raw_sql(
-               raw_sql=getting_tables_columns_sql,
-        )
-
-        for record in records:
-            (
-                table_name,
-                column_name,
-                data_type,
-                ordinal_position,
-                constraint_table_name,
-                constraint_type,
-            ) = record
-
-            self.tables[table_name].append_column(
-                column_name=column_name,
-                data_type=data_type,
-                ordinal_position=ordinal_position,
-                constraint_table=self.tables.get(constraint_table_name),
-                constraint_type=constraint_type,
+        coroutines = [
+            self._prepare_chunk_tables(
+                chunk_table_names=chunk_table_names,
             )
+            for chunk_table_names in chunks_table_names
+        ]
+
+        if coroutines:
+            await asyncio.gather(*coroutines)
 
         logger.info(
             f'prepare tables progress - {len(self.tables.keys())}/'
             f'{len(self.table_names)}'
         )
-
-    def fill_revert_tables(self):
-        """
-        Метод для заполнения списка таблиц из которых есть ссылки на эту таблицу
-        """
-        for table in self.tables.values():
-            for column in table.foreign_keys_columns:
-                try:
-                    column.constraint_table.revert_fk_tables[table.name] = False
-                except KeyError:
-                    logger.warning(
-                        f'Key error - table name - "{table.name}", '
-                        f'constraint table name - '
-                        f'"{column.constraint_table.name}"'
-                    )
-                    raise KeyError
 
     async def set_max_tables_sequences(self, dst_pool: Pool):
         """
@@ -226,20 +250,15 @@ class DstDatabase(BaseDatabase):
 
         await asyncio.wait(coroutines)
 
-    def prepare_fks_with_key_column(self):
+    async def prepare_structure(self):
         """
-        Метод проставления внешних ключей, которые указывают на таблицы с key_column
-        Если в таблице имеются ссылки на таблицы с key_column, то при добавлении
-        записей стоит опираться только на эти поля
+        Prepare destination database structure
         """
-        logger.info('prepare fks with key columns')
+        await self.prepare_table_names()
 
-        for table in self.tables.values():
-            for fk_column in table.not_self_fk_columns:
-                if fk_column.constraint_table.with_key_column:
-                    table.fks_with_ent_id.append(fk_column)
+        await self.prepare_tables()
 
-        logger.info('finish preparing fks with key columns')
+        logger.info(f'dst_database tables count - {len(self.table_names)}')
 
 
 class SrcDatabase(BaseDatabase):
@@ -269,7 +288,6 @@ class DBTable(object):
         'revert_fk_tables',
         'need_imported',
         'transferred_rel_tables_percent',
-        'fks_with_ent_id',
         'transferred_ids',
     )
 
@@ -298,8 +316,6 @@ class DBTable(object):
 
         # параметр указывает процент соседних таблиц, которые были импортированы
         self.transferred_rel_tables_percent = 1
-
-        self.fks_with_ent_id: List['DBColumn'] = []
 
         self.transferred_ids = set()
 
@@ -400,7 +416,17 @@ class DBTable(object):
             )
         )
 
-    def append_column(
+    @property
+    @lru_cache()
+    def fks_with_key_column(self):
+        return list(
+            filter(
+                lambda c: c.constraint_table.with_key_column,
+                self.not_self_fk_columns
+            )
+        )
+
+    async def append_column(
         self,
         column_name: str,
         data_type: str,
@@ -409,10 +435,10 @@ class DBTable(object):
         constraint_type: str,
     ):
         if column_name in self.columns:
-            column: DBColumn = self.get_column_by_name(column_name)
+            column: DBColumn = await self.get_column_by_name(column_name)
 
             if constraint_type:
-                column.add_constraint_type(constraint_type)
+                await column.add_constraint_type(constraint_type)
 
                 if constraint_type == ConstraintTypesEnum.FOREIGN_KEY:
                     column.constraint_table = constraint_table
@@ -436,9 +462,12 @@ class DBTable(object):
             self._key_column = column
             self._with_key_column = True
 
+        if column.is_foreign_key:
+            column.constraint_table.revert_fk_tables[self.name] = False
+
         return column
 
-    def get_column_by_name(self, column_name):
+    async def get_column_by_name(self, column_name):
         """
         :param column_name:
         :return DbColumn or None:
@@ -593,5 +622,5 @@ class DBColumn(object):
     def get_column_name_with_type(self):
         return f'{self.name} {self.data_type}'
 
-    def add_constraint_type(self, constraint_type):
+    async def add_constraint_type(self, constraint_type):
         self.constraint_type.append(constraint_type)

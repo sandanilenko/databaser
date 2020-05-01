@@ -75,8 +75,6 @@ class Collector:
                 )
             )
 
-            logger.info(get_key_table_parents_ids_sql)
-
             tasks = await asyncio.wait(
                 [
                     connection.fetch(get_key_table_parents_ids_sql)
@@ -233,7 +231,7 @@ class Collector:
             return set()
         # формирование запроса на получения идентификаторов записей
         # внешней таблицы
-        constraint_table_ids_sql_list = SQLRepository.get_constraint_table_ids_sql(
+        constraint_table_ids_sql_list = await SQLRepository.get_constraint_table_ids_sql(
             table=table,
             constraint_column=column,
             key_column_ids=key_column_ids,
@@ -283,7 +281,7 @@ class Collector:
         rev_table = self._dst_database.tables[rev_table_name]
         logger.info(f"prepare revert table {rev_table_name}")
 
-        if rev_table.fks_with_ent_id and not table.with_key_column:
+        if rev_table.fks_with_key_column and not table.with_key_column:
             return
 
         if rev_table.need_imported:
@@ -310,11 +308,11 @@ class Collector:
         # обход таблиц связанных через внешние ключи
         where_conditions = {}
 
-        if table.fks_with_ent_id:
-            fk_columns = table.fks_with_ent_id
+        if table.fks_with_key_column:
+            fk_columns = table.fks_with_key_column
             logger.debug(
                 f"table with fks_with_ent_id - "
-                f"{make_str_from_iterable(table.fks_with_ent_id)}"
+                f"{make_str_from_iterable(table.fks_with_key_column)}"
             )
         else:
             fk_columns = table.not_self_fk_columns
@@ -634,7 +632,7 @@ class Collector:
         # self.compute_transferred_related_tables_counts(not_transferring)
         # not_transferred_tables = sorted(
         #     not_transferred_tables,
-        #     key=lambda t: len(t.fks_with_ent_id),
+        #     key=lambda t: len(t.fks_with_key_column),
         #     reverse=True,
         # )
 
@@ -726,10 +724,9 @@ class Collector:
             logger.debug(f"table {rel_table_name} not found")
             return
 
-        if (
-            rel_table.primary_key.data_type !=
-            target_table.get_column_by_name("object_id").data_type
-        ):
+        object_id_column = await target_table.get_column_by_name("object_id")
+
+        if rel_table.primary_key.data_type != object_id_column.data_type:
             logger.debug(
                 f"PK of table {rel_table_name} has an incompatible data type"
             )
@@ -777,11 +774,11 @@ class Collector:
         Собирает идентификаторы записей таблиц, содержащих generic key
         Предполагается, что такие таблицы имеют поля object_id и content_type_id
         """
-        logger.info("collect generic tables recordrs ids")
+        logger.info("collect generic tables records ids")
 
         await asyncio.wait([self._prepare_content_type_tables()])
 
-        generic_tables = set(
+        generic_table_names = set(
             settings.TABLES_WITH_GENERIC_FOREIGN_KEY
         ).difference(settings.EXCLUDED_TABLES)
 
@@ -789,7 +786,7 @@ class Collector:
             self._prepare_generic_table_data(
                 self._dst_database.tables.get(table_name)
             )
-            for table_name in generic_tables
+            for table_name in filter(None, generic_table_names)
         ]
 
         if coroutines:

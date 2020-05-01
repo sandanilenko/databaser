@@ -2,9 +2,6 @@ import asyncio
 from datetime import (
     datetime,
 )
-from typing import (
-    Iterable,
-)
 
 import asyncpg
 import uvloop
@@ -49,15 +46,10 @@ async def main(
         db_connection_parameters=src_db_connection_parameters,
     )
 
-    await src_database.prepare_table_names()
-
-    logger.info(
-        f'src_database tables count - {len(src_database.table_names)}'
-    )
-
     dst_database = DstDatabase(
         db_connection_parameters=dst_db_connection_parameters,
     )
+
     statistic_manager = StatisticManager(dst_database, logger)
 
     async with asyncpg.create_pool(
@@ -66,6 +58,15 @@ async def main(
         async with asyncpg.create_pool(
             src_database.connection_str, min_size=30, max_size=40
         ) as src_pool:
+            src_database.connection_pool = src_pool
+            dst_database.connection_pool = dst_pool
+
+            await src_database.prepare_table_names()
+
+            logger.info(
+                f'src_database tables count - {len(src_database.table_names)}'
+            )
+
             fdw_wrapper = PostgresFDWExtensionWrapper(
                 src_database=src_database,
                 dst_database=dst_database,
@@ -77,21 +78,7 @@ async def main(
                 statistic_manager,
                 TransferringStagesEnum.PREPARE_DST_DB_STRUCTURE,
             ):
-                await dst_database.prepare_table_names()
-
-                logger.info(
-                    f'dst_database tables count - '
-                    f'{len(dst_database.table_names)}'
-                )
-
-                await asyncio.wait(
-                    [
-                        dst_database.prepare_tables(),
-                    ]
-                )
-
-                dst_database.fill_revert_tables()
-                dst_database.prepare_fks_with_key_column()
+                await dst_database.prepare_structure()
 
                 await dst_database.disable_triggers()
 
