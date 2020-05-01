@@ -44,6 +44,10 @@ TABLES_WITH_GENERIC_FOREIGN_KEY = os.environ.get(
     '',
 ).split(',')
 
+TABLES_LIMIT_PER_TRANSACTION = int(
+    os.environ.get('DATABASER_TABLES_LIMIT_PER_TRANSACTION', 100)
+)
+
 TRUNCATE_EXCLUDED_TABLES = os.environ.get(
     'DATABASER_TABLES_TRUNCATE_EXCLUDED',
     '',

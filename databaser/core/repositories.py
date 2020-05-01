@@ -18,7 +18,6 @@ from core.helpers import (
 
 class SQLRepository:
     CHUNK_SIZE = 70000
-    TABLES_LIMIT_PER_TRANSACTION = 100
 
     CREATE_FDW_EXTENSION_SQL_TEMPLATE = (
         'CREATE EXTENSION postgres_fdw;'
@@ -100,30 +99,56 @@ class SQLRepository:
     """
 
     SELECT_TABLE_FIELDS_SQL = """
-            select clmns.table_name,
-              clmns.column_name,
-              clmns.data_type,
-              clmns.ordinal_position,
-              constraints.constraint_table_name,
-              constraints.constraint_type
-            from information_schema.columns as clmns
-            left join (
-              select
-                tc.constraint_type, tc.table_name, kcu.column_name,
+        with tc as (
+            select table_name,
+                   constraint_type,
+                   constraint_name
+            from information_schema.table_constraints
+            where table_name in ({table_names})
+        )
+        select clmns.table_name,
+            clmns.column_name,
+            clmns.data_type,
+            clmns.ordinal_position,
+            constraints.constraint_table_name,
+            constraints.constraint_type
+        from (
+            select table_name,
+                   column_name,
+                   data_type,
+                   ordinal_position
+            from information_schema.columns
+            where table_name in ({table_names})
+        ) as clmns
+        left join (
+            select
+                tc1.constraint_type,
+                tc1.table_name,
+                kcu.column_name,
                 ccu.table_name as constraint_table_name
-              from
-                  information_schema.table_constraints as tc
-                  join information_schema.key_column_usage as kcu
-                    on tc.constraint_name = kcu.constraint_name
-                  join information_schema.constraint_column_usage as ccu
-                    on ccu.constraint_name = tc.constraint_name
-              where tc.table_name in ({tables_names}) and (tc.constraint_type 
-              in ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE') or tc.constraint_type isnull)
-            ) as constraints on (
-                constraints.table_name = clmns.table_name and 
-                constraints.column_name = clmns.column_name)
-            where clmns.table_name in ({tables_names});
-        """
+            from
+            (
+                select * from tc
+            ) as tc1
+            join (
+                select constraint_name,
+                       column_name
+                from information_schema.key_column_usage
+            ) as kcu on tc1.constraint_name = kcu.constraint_name
+            join (
+                select constraint_name,
+                       table_name
+                from information_schema.constraint_column_usage
+            ) as ccu on ccu.constraint_name = tc1.constraint_name
+            where tc1.table_name in ({table_names}) and (
+                tc1.constraint_type in ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE') or
+                tc1.constraint_type isnull
+            )
+        ) as constraints on (
+            constraints.table_name = clmns.table_name and
+            constraints.column_name = clmns.column_name
+        );
+    """
 
     DISABLE_TRIGGERS_SQL_TEMPLATE = "update pg_trigger set tgenabled='D' ;"
 
@@ -244,7 +269,7 @@ class SQLRepository:
 
         chunks = make_chunks(
             iterable=table_names,
-            size=cls.TABLES_LIMIT_PER_TRANSACTION,
+            size=settings.TABLES_LIMIT_PER_TRANSACTION,
         )
         for chunk in chunks:
             query = cls.TRUNCATE_TABLE_SQL_TEMPLATE.format(
@@ -293,7 +318,7 @@ class SQLRepository:
         Получение sql-запроса на получение колонок таблиц
         """
         select_tables_fields_sql = cls.SELECT_TABLE_FIELDS_SQL.format(
-            tables_names=table_names,
+            table_names=table_names,
             constraint_types=ConstraintTypesEnum.get_types_comma(),
         )
 
@@ -336,7 +361,7 @@ class SQLRepository:
         )
 
     @classmethod
-    def get_constraint_table_ids_sql(
+    async def get_constraint_table_ids_sql(
         cls,
         table,
         constraint_column,
@@ -389,7 +414,7 @@ class SQLRepository:
                 if c_name in settings.KEY_COLUMN_NAMES:
                     continue
 
-                column = table.get_column_by_name(c_name)
+                column = await table.get_column_by_name(c_name)
 
                 if c_ids:
                     if is_revert:
