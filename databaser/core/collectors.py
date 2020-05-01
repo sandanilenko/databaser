@@ -777,11 +777,11 @@ class Collector:
         Собирает идентификаторы записей таблиц, содержащих generic key
         Предполагается, что такие таблицы имеют поля object_id и content_type_id
         """
-        logger.info("collect generic tables recordrs ids")
+        logger.info("collect generic tables records ids")
 
         await asyncio.wait([self._prepare_content_type_tables()])
 
-        generic_tables = set(
+        generic_table_names = set(
             settings.TABLES_WITH_GENERIC_FOREIGN_KEY
         ).difference(settings.EXCLUDED_TABLES)
 
@@ -789,7 +789,7 @@ class Collector:
             self._prepare_generic_table_data(
                 self._dst_database.tables.get(table_name)
             )
-            for table_name in generic_tables
+            for table_name in filter(None, generic_table_names)
         ]
 
         if coroutines:
