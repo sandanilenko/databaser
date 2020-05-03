@@ -96,7 +96,7 @@ async def main(
                 dst_pool=dst_pool,
                 src_pool=src_pool,
                 statistic_manager=statistic_manager,
-                key_column_ids=settings.KEY_COLUMN_IDS,
+                key_column_ids=settings.KEY_COLUMN_VALUES,
             )
 
             await asyncio.wait([collector.build_key_column_ids_structure()])

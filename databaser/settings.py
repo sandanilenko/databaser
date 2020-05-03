@@ -36,7 +36,7 @@ if TEST_MODE:
 
 KEY_TABLE_NAME = os.environ.get('DATABASER_KEY_TABLE_NAME')
 KEY_COLUMN_NAMES = os.environ.get('DATABASER_KEY_COLUMN_NAMES', '').replace(' ', '').split(',')
-KEY_COLUMN_IDS = os.environ.get('DATABASER_KEY_COLUMN_IDS', '').replace(' ', '').split(',')
+KEY_COLUMN_VALUES = os.environ.get('DATABASER_KEY_COLUMN_VALUES', '').replace(' ', '').split(',')
 
 EXCLUDED_TABLES = os.environ.get('DATABASER_EXCLUDED_TABLES', '').split(',')
 TABLES_WITH_GENERIC_FOREIGN_KEY = os.environ.get(
@@ -63,12 +63,12 @@ if not any(
         DST_DB_NAME,
         DST_DB_USER,
         DST_DB_PASSWORD,
-        KEY_COLUMN_IDS,
+        KEY_COLUMN_VALUES,
     ]
 ):
     raise ValueError('You must send all params!')
 
-KEY_COLUMN_IDS = tuple(map(int, KEY_COLUMN_IDS))
+KEY_COLUMN_VALUES = tuple(map(int, KEY_COLUMN_VALUES))
 
 VALIDATE_DATA_BEFORE_TRANSFERRING = os.environ.get(
     'VALIDATE_DATA_BEFORE_TRANSFERRING',
