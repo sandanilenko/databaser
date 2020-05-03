@@ -1,4 +1,5 @@
 import asyncio
+from typing import List
 
 import asyncpg
 from asyncpg import (
@@ -54,7 +55,7 @@ class Collector:
         self._src_database = src_database
         self._dst_pool = dst_pool
         self._src_pool = src_pool
-        self.key_column_ids = key_column_ids
+        self.key_column_ids: List[str] = key_column_ids
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}
@@ -125,6 +126,7 @@ class Collector:
     async def _fill_table_rows_count(self, table_name: str):
         async with self._src_pool.acquire() as connection:
             table = self._dst_database.tables[table_name]
+
             try:
                 table_rows_counts_sql = (
                     SQLRepository.get_count_table_records(
@@ -137,7 +139,7 @@ class Collector:
                     f"{table.name}"
                 )
                 raise AttributeError
-            except UndefinedFunctionError as e:
+            except UndefinedFunctionError:
                 raise UndefinedFunctionError
 
             res = await connection.fetchrow(table_rows_counts_sql)
@@ -588,26 +590,10 @@ class Collector:
         """
         logger.info("start collecting common tables records ids")
 
-        tables_without_generics = list(
-            filter(
-                lambda t: (
-                    t.name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
-                ),
-                self._dst_database.tables.values(),
-            )
-        )
-
-        tables_with_key_column = list(
-            filter(
-                lambda t: t.with_key_column,
-                tables_without_generics,
-            )
-        )
-
         # обход таблиц с key_column и их соседей
         coroutines = [
             self._collect_importing_ent_table_records_ids(table)
-            for table in tables_with_key_column
+            for table in self._dst_database.tables_with_key_column
         ]
 
         if coroutines:
@@ -627,17 +613,8 @@ class Collector:
             f"tables not transferring {str(len(not_transferred_tables))}"
         )
 
-        # вычисление процента импортированных соседних таблиц для не
-        # перенесенных и дальнейшая сортировка по убыванию показателя
-        # self.compute_transferred_related_tables_counts(not_transferring)
-        # not_transferred_tables = sorted(
-        #     not_transferred_tables,
-        #     key=lambda t: len(t.fks_with_key_column),
-        #     reverse=True,
-        # )
-
         not_transferred_relatives = []
-        for table in tables_without_generics:
+        for table in self._dst_database.tables_without_generics:
             for fk_column in table.not_self_fk_columns:
                 not_transferred_relatives.append(
                     (table.name, fk_column.constraint_table.name)
@@ -650,7 +627,10 @@ class Collector:
         sorted_not_transferred = sorting_result.cyclic + sorting_result.sorted
 
         without_relatives = list(
-            {table.name for table in tables_without_generics}.difference(
+            {
+                table.name
+                for table in self._dst_database.tables_without_generics
+            }.difference(
                 sorted_not_transferred
             )
         )
@@ -664,14 +644,6 @@ class Collector:
                 await self._collect_importing_fk_tables_records_ids(
                     table
                 )
-
-        # collecting_fk_tables_data_coroutines = [
-        #
-        #     for table in not_transferring
-        # ]
-        #
-        # if collecting_fk_tables_data_coroutines:
-        #     await asyncio.wait(collecting_fk_tables_data_coroutines)
 
         logger.info("finished collecting common tables records ids")
 

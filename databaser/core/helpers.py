@@ -14,16 +14,11 @@ from typing import (
 
 logger = logging.getLogger('asyncio')
 
-# fh = logging.FileHandler('transporter.log')
-# fh.setLevel(logging.DEBUG)
-
 sh = logging.StreamHandler()
 
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-# fh.setFormatter(formatter)
 
 sh.setFormatter(formatter)
-# logger.addHandler(fh)
 logger.addHandler(sh)
 
 DBConnectionParameters = namedtuple(
