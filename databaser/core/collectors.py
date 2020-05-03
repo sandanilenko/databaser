@@ -126,6 +126,7 @@ class Collector:
     async def _fill_table_rows_count(self, table_name: str):
         async with self._src_pool.acquire() as connection:
             table = self._dst_database.tables[table_name]
+
             try:
                 table_rows_counts_sql = (
                     SQLRepository.get_count_table_records(
@@ -138,7 +139,7 @@ class Collector:
                     f"{table.name}"
                 )
                 raise AttributeError
-            except UndefinedFunctionError as e:
+            except UndefinedFunctionError:
                 raise UndefinedFunctionError
 
             res = await connection.fetchrow(table_rows_counts_sql)
@@ -612,15 +613,6 @@ class Collector:
             f"tables not transferring {str(len(not_transferred_tables))}"
         )
 
-        # вычисление процента импортированных соседних таблиц для не
-        # перенесенных и дальнейшая сортировка по убыванию показателя
-        # self.compute_transferred_related_tables_counts(not_transferring)
-        # not_transferred_tables = sorted(
-        #     not_transferred_tables,
-        #     key=lambda t: len(t.fks_with_key_column),
-        #     reverse=True,
-        # )
-
         not_transferred_relatives = []
         for table in self._dst_database.tables_without_generics:
             for fk_column in table.not_self_fk_columns:
@@ -652,14 +644,6 @@ class Collector:
                 await self._collect_importing_fk_tables_records_ids(
                     table
                 )
-
-        # collecting_fk_tables_data_coroutines = [
-        #
-        #     for table in not_transferring
-        # ]
-        #
-        # if collecting_fk_tables_data_coroutines:
-        #     await asyncio.wait(collecting_fk_tables_data_coroutines)
 
         logger.info("finished collecting common tables records ids")
 

@@ -2,7 +2,7 @@ import asyncio
 
 from asyncpg import (
     NotNullViolationError,
-    PostgresSyntaxError,
+    PostgresError, PostgresSyntaxError,
     UndefinedColumnError,
 )
 from asyncpg.pool import (
@@ -108,17 +108,15 @@ class Transporter:
                 NotNullViolationError,
                 PostgresSyntaxError,
             ) as e:
-                logger.warning(
-                    f"{str(e)}, table - {table.name}, "
-                    f"sql - {transfer_sql} --- _transfer_chunk_table_data"
+                raise PostgresError(
+                    f'{str(e)}, table - {table.name}, '
+                    f'sql - {transfer_sql} --- _transfer_chunk_table_data'
                 )
-                raise type(e)
 
         if transferred_ids:
             transferred_ids = [tr[0] for tr in transferred_ids]
             table.transferred_ids.update(transferred_ids)
 
-        # del need_import_ids_chunk[:]
         del transfer_sql
 
     async def _transfer_collecting_data(self):

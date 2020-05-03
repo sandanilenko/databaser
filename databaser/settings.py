@@ -66,7 +66,7 @@ if not any(
         KEY_COLUMN_IDS,
     ]
 ):
-    raise Exception('You must send all params!')
+    raise ValueError('You must send all params!')
 
 KEY_COLUMN_IDS = tuple(map(int, KEY_COLUMN_IDS))
 

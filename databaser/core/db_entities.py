@@ -85,6 +85,39 @@ class BaseDatabase(object):
                 for table_name_rec in table_names
             ]
 
+    async def execute_raw_sql(
+        self,
+        raw_sql: str,
+    ):
+        """
+        Async executing raw sql
+        """
+        connection = await asyncpg.connect(self.connection_str)
+
+        try:
+            await connection.execute(raw_sql)
+        finally:
+            del raw_sql
+            await connection.close()
+
+    async def fetch_raw_sql(
+        self,
+        raw_sql: str,
+    ):
+        """
+        Async executing raw sql with fetching result
+        """
+        connection = await asyncpg.connect(self.connection_str)
+
+        try:
+            result = await connection.fetch(raw_sql)
+        finally:
+            await connection.close()
+
+        del raw_sql
+
+        return result
+
 
 class SrcDatabase(BaseDatabase):
     """
@@ -271,6 +304,8 @@ class DstDatabase(BaseDatabase):
 
         await self.execute_raw_sql(disable_triggers_sql)
 
+        logger.info('trigger disabled.')
+
     async def enable_triggers(self):
         """
         Enable database triggers
@@ -279,34 +314,7 @@ class DstDatabase(BaseDatabase):
 
         await self.execute_raw_sql(enable_triggers_sql)
 
-        logger.warning('triggers enabled!')
-
-    async def execute_raw_sql(self, raw_sql):
-        """
-        Асинхронный метод выполнения чистого sql
-        """
-        connection = await asyncpg.connect(self.connection_str)
-
-        try:
-            await connection.execute(raw_sql)
-        finally:
-            del raw_sql
-            await connection.close()
-
-    async def fetch_raw_sql(self, raw_sql):
-        """
-        Асинхронный метод выполнения чистого sql с возвращением результата
-        """
-        connection = await asyncpg.connect(self.connection_str)
-
-        try:
-            result = await connection.fetch(raw_sql)
-        finally:
-            await connection.close()
-
-        del raw_sql
-
-        return result
+        logger.info('triggers enabled.')
 
 
 class DBTable(object):
