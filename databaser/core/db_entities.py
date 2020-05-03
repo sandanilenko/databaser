@@ -342,7 +342,6 @@ class DBTable(object):
         self.max_id = 0
         self.columns: Dict[str, 'DBColumn'] = {}
 
-        self._with_key_column = False
         self._key_column = None
 
         # хранит названия таблиц которые ссылаются на текущую и признак того,
@@ -415,7 +414,7 @@ class DBTable(object):
     @property
     @lru_cache()
     def with_key_column(self):
-        return self._with_key_column
+        return bool(self._key_column)
 
     @property
     @lru_cache()
@@ -497,9 +496,8 @@ class DBTable(object):
 
             self.columns[column_name] = column
 
-        if not self._with_key_column and column.is_key_column:
+        if not self._key_column and column.is_key_column:
             self._key_column = column
-            self._with_key_column = True
 
         if column.is_foreign_key:
             column.constraint_table.revert_fk_tables[self.name] = False

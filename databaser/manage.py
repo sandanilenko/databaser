@@ -29,7 +29,7 @@ from core.transporters import (
     Transporter,
 )
 from core.validators import (
-    DataValidator,
+    ValidatorManager,
 )
 from core.wrappers import (
     PostgresFDWExtensionWrapper,
@@ -109,39 +109,37 @@ async def main(
 
             await collector.collect()
 
-            validator = DataValidator(
+            transporter = Transporter(
                 dst_database=dst_database,
                 src_database=src_database,
                 dst_pool=dst_pool,
                 src_pool=src_pool,
                 statistic_manager=statistic_manager,
+                key_column_ids=collector.key_column_ids,
             )
 
-            if not (
-                settings.VALIDATE_DATA_BEFORE_TRANSFERRING and
-                validator.validate()
+            with StatisticIndexer(
+                statistic_manager,
+                TransferringStagesEnum.PREPARING_AND_TRANSFERRING_DATA,
             ):
-                transporter = Transporter(
-                    dst_database=dst_database,
-                    src_database=src_database,
-                    dst_pool=dst_pool,
-                    src_pool=src_pool,
-                    statistic_manager=statistic_manager,
-                    key_column_ids=collector.key_column_ids,
-                )
-
-                with StatisticIndexer(
-                    statistic_manager,
-                    TransferringStagesEnum.PREPARING_AND_TRANSFERRING_DATA,
-                ):
-                    await asyncio.wait([transporter.transfer()])
+                await asyncio.wait([transporter.transfer()])
 
             await dst_database.enable_triggers()
 
             await asyncio.wait([fdw_wrapper.disable()])
 
-    statistic_manager.print_transferring_indications()
-    statistic_manager.print_records_transfer_statistic()
+            statistic_manager.print_transferring_indications()
+            statistic_manager.print_records_transfer_statistic()
+
+            if settings.TEST_MODE:
+                validator_manager = ValidatorManager(
+                    dst_database=dst_database,
+                    src_database=src_database,
+                    statistic_manager=statistic_manager,
+                    key_column_ids=collector.key_column_ids,
+                )
+
+                await validator_manager.validate()
 
 
 if __name__ == '__main__':
