@@ -35,7 +35,7 @@ from core.strings import (
 
 class BaseDatabase(object):
     """
-    Базовый класс БД
+    Base class for creating databases
     """
 
     def __init__(
@@ -46,16 +46,18 @@ class BaseDatabase(object):
             db_connection_parameters
         )
         self.table_names: Optional[List[str]] = None
+        self.tables: Optional[Dict[str, DBTable]] = None
+
         self._connection_pool: Optional[Pool] = None
 
     @property
-    def connection_str(self):
+    def connection_str(self) -> str:
         return CONNECTION_STR_TEMPLATE.format(
             self.db_connection_parameters
         )
 
     @property
-    def connection_pool(self):
+    def connection_pool(self) -> Pool:
         return self._connection_pool
 
     @connection_pool.setter
@@ -66,6 +68,9 @@ class BaseDatabase(object):
         self._connection_pool = pool
 
     async def prepare_table_names(self):
+        """
+        Preparing database table names list
+        """
         select_tables_names_list_sql = SQLRepository.get_select_tables_names_list_sql(  # noqa
             excluded_tables=settings.EXCLUDED_TABLES,
         )
@@ -80,99 +85,45 @@ class BaseDatabase(object):
                 for table_name_rec in table_names
             ]
 
-    async def truncate_tables(self):
-        """
-        Очистка всех данных из БД
-        """
-        logger.info('start truncating all tables')
 
-        tables_names = filter(
-            lambda item: (
-                item not in settings.TRUNCATE_EXCLUDED_TABLES and
-                item not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
-            ),
-            self.table_names,
-        )
+class SrcDatabase(BaseDatabase):
+    """
+    Source database
+    """
 
-        truncate_table_queries = SQLRepository.get_truncate_table_queries(
-            table_names=tables_names,
-        )
-
-        for query in truncate_table_queries:
-            await self.execute_raw_sql(query)
-
-        logger.info('finish truncating all tables')
-
-    async def disable_triggers(self):
-        """
-        Выключение тригеров на проверку целостности данных
-        """
-        disable_triggers_sql = SQLRepository.get_disable_triggers_sql()
-
-        await self.execute_raw_sql(disable_triggers_sql)
-
-    async def enable_triggers(self):
-        """
-        Включение всех тригеров в БД
-        """
-        enable_triggers_sql = SQLRepository.get_enable_triggers_sql()
-
-        await self.execute_raw_sql(enable_triggers_sql)
-
-        logger.warning('triggers enabled!')
-
-    async def execute_raw_sql(self, raw_sql):
-        """
-        Асинхронный метод выполнения чистого sql
-        """
-        connection = await asyncpg.connect(self.connection_str)
-
-        try:
-            await connection.execute(raw_sql)
-        finally:
-            del raw_sql
-            await connection.close()
-
-    async def fetch_raw_sql(self, raw_sql):
-        """
-        Асинхронный метод выполнения чистого sql с возвращением результата
-        """
-        connection = await asyncpg.connect(self.connection_str)
-
-        try:
-            result = await connection.fetch(raw_sql)
-        finally:
-            await connection.close()
-
-        del raw_sql
-
-        return result
-
-
-class DstDatabase(BaseDatabase):
     def __init__(
         self,
         db_connection_parameters: DBConnectionParameters,
     ):
-        """
-        Целевая база данных
-        """
-        super().__init__(db_connection_parameters)
+        logger.info('init src database')
 
-        logger.info('Init dst database')
-        self.tables: Optional[Dict[str, DBTable]] = None
+        super().__init__(
+            db_connection_parameters=db_connection_parameters,
+        )
 
-        self.drop_all_constraints_definitions = []
-        self.create_all_constraints_definitions = []
-        self.constrains_names_list = []
 
-        self.indexes = set()
-        self.indexes_definitions = []
+class DstDatabase(BaseDatabase):
+    """
+    Destination database
+    """
+
+    def __init__(
+        self,
+        db_connection_parameters: DBConnectionParameters,
+    ):
+        super().__init__(
+            db_connection_parameters=db_connection_parameters,
+        )
+
+        logger.info('init dst database')
 
     async def _prepare_chunk_tables(
         self,
         chunk_table_names: Iterable[str],
     ):
+        """
+        Preparing tables of chunk table names
+        """
         getting_tables_columns_sql = SQLRepository.get_table_columns_sql(
             table_names=make_str_from_iterable(
                 iterable=chunk_table_names,
@@ -208,6 +159,9 @@ class DstDatabase(BaseDatabase):
             await asyncio.gather(*coroutines)
 
     async def prepare_tables(self):
+        """
+        Prepare tables structure for transferring data process
+        """
         logger.info('prepare tables structure for transferring process')
 
         self.tables = {
@@ -239,9 +193,7 @@ class DstDatabase(BaseDatabase):
 
     async def set_max_tables_sequences(self, dst_pool: Pool):
         """
-        Устанавливает на всех таблицах значения последовательностей
-        Значение последовательности равно max(id) + 1
-        Может быть метод стоит декомпозировать
+        Setting max table sequence value as max(id) + 1
         """
         coroutines = [
             table.set_max_sequence(dst_pool)
@@ -258,17 +210,75 @@ class DstDatabase(BaseDatabase):
 
         await self.prepare_tables()
 
-        logger.info(f'dst_database tables count - {len(self.table_names)}')
+        logger.info(f'dst database tables count - {len(self.table_names)}')
 
-
-class SrcDatabase(BaseDatabase):
-    def __init__(self, db_connection_parameters):
+    async def truncate_tables(self):
         """
-        :param DBConnectionParameters db_connection_parameters:
+        Truncating tables
         """
-        logger.info('init src database')
+        logger.info('start truncating tables..')
 
-        super().__init__(db_connection_parameters)
+        tables_names = filter(
+            lambda item: (
+                item not in settings.TRUNCATE_EXCLUDED_TABLES and
+                item not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+            ),
+            self.table_names,
+        )
+
+        truncate_table_queries = SQLRepository.get_truncate_table_queries(
+            table_names=tables_names,
+        )
+
+        for query in truncate_table_queries:
+            await self.execute_raw_sql(query)
+
+        logger.info('truncating tables finished.')
+
+    async def disable_triggers(self):
+        """
+        Disable database triggers
+        """
+        disable_triggers_sql = SQLRepository.get_disable_triggers_sql()
+
+        await self.execute_raw_sql(disable_triggers_sql)
+
+    async def enable_triggers(self):
+        """
+        Enable database triggers
+        """
+        enable_triggers_sql = SQLRepository.get_enable_triggers_sql()
+
+        await self.execute_raw_sql(enable_triggers_sql)
+
+        logger.warning('triggers enabled!')
+
+    async def execute_raw_sql(self, raw_sql):
+        """
+        Асинхронный метод выполнения чистого sql
+        """
+        connection = await asyncpg.connect(self.connection_str)
+
+        try:
+            await connection.execute(raw_sql)
+        finally:
+            del raw_sql
+            await connection.close()
+
+    async def fetch_raw_sql(self, raw_sql):
+        """
+        Асинхронный метод выполнения чистого sql с возвращением результата
+        """
+        connection = await asyncpg.connect(self.connection_str)
+
+        try:
+            result = await connection.fetch(raw_sql)
+        finally:
+            await connection.close()
+
+        del raw_sql
+
+        return result
 
 
 class DBTable(object):
@@ -322,7 +332,8 @@ class DBTable(object):
     def __str__(self):
         return (
             f'table {self.name} with_fk {self.with_fk}, '
-            f'with_key_column {self.with_key_column}, with_self_fk {self.with_self_fk}'
+            f'with_key_column {self.with_key_column}, '
+            f'with_self_fk {self.with_self_fk}'
         )
 
     @property
