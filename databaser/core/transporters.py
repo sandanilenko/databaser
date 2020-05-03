@@ -1,8 +1,12 @@
 import asyncio
+from typing import (
+    Set,
+)
 
 from asyncpg import (
     NotNullViolationError,
-    PostgresError, PostgresSyntaxError,
+    PostgresError,
+    PostgresSyntaxError,
     UndefinedColumnError,
 )
 from asyncpg.pool import (
@@ -44,13 +48,13 @@ class Transporter:
         dst_pool: Pool,
         src_pool: Pool,
         statistic_manager: StatisticManager,
-        key_column_ids=(),
+        key_column_values: Set[int],
     ):
         self._dst_database = dst_database
         self._src_database = src_database
         self._dst_pool = dst_pool
         self._src_pool = src_pool
-        self.key_column_ids = key_column_ids
+        self.key_column_ids = key_column_values
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}

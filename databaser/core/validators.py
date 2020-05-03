@@ -6,6 +6,7 @@ from abc import (
 from typing import (
     Dict,
     List,
+    Set,
     Tuple,
     Type,
     Union,
@@ -43,12 +44,12 @@ class BaseValidator(metaclass=ABCMeta):
         dst_database: DstDatabase,
         src_database: SrcDatabase,
         statistic_manager: StatisticManager,
-        key_column_ids: List[str],
+        key_column_values: Set[int],
     ):
         self._dst_database = dst_database
         self._src_database = src_database
         self._statistic_manager = statistic_manager
-        self._key_column_ids = key_column_ids
+        self._key_column_ids = key_column_values
 
     @abstractmethod
     async def validate(self) -> Tuple[bool, str]:
@@ -152,12 +153,12 @@ class ValidatorManager:
         dst_database: DstDatabase,
         src_database: SrcDatabase,
         statistic_manager: StatisticManager,
-        key_column_ids: List[str],
+        key_column_values: Set[int],
     ):
         self._dst_database = dst_database
         self._src_database = src_database
         self._statistic_manager = statistic_manager
-        self._key_column_ids = ['None', *list(map(str, key_column_ids))]
+        self._key_column_ids = ['None', *list(map(str, key_column_values))]
 
         self._validation_result: Dict[str, Tuple[bool, str]] = {}
 
@@ -206,7 +207,7 @@ class ValidatorManager:
             'dst_database': self._dst_database,
             'src_database': self._src_database,
             'statistic_manager': self._statistic_manager,
-            'key_column_ids': self._key_column_ids,
+            'key_column_values': self._key_column_ids,
         }
 
         coroutines = [

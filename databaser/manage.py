@@ -1,4 +1,7 @@
 import asyncio
+from copy import (
+    copy,
+)
 from datetime import (
     datetime,
 )
@@ -20,6 +23,7 @@ from core.enums import (
 from core.helpers import (
     DBConnectionParameters,
     logger,
+    make_str_from_iterable,
 )
 from core.loggers import (
     StatisticIndexer,
@@ -78,6 +82,76 @@ class DatabaserManager:
             database=self._dst_database,
         )
 
+        self._key_column_values = set(settings.KEY_COLUMN_VALUES)
+
+    async def _get_key_table_parents_values(
+        self,
+        key_table_primary_key_name: str,
+        key_table_primary_key_value: int,
+    ):
+        """
+        Get hierarchy of key table records by parent_id
+        """
+        async with self._src_database.connection_pool.acquire() as connection:
+            get_key_table_parents_values_sql = f"""
+                with recursive hierarchy("{key_table_primary_key_name}", "parent_id", "level") as (
+                    select "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}", 
+                        "{settings.KEY_TABLE_NAME}"."parent_id", 
+                        0 
+                    from "{settings.KEY_TABLE_NAME}" 
+                    where "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = {key_table_primary_key_value}
+        
+                    union all
+        
+                    select
+                        "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}",
+                        "{settings.KEY_TABLE_NAME}"."parent_id",
+                        "hierarchy"."level" + 1
+                    from "{settings.KEY_TABLE_NAME}" 
+                    join "hierarchy" on "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."parent_id"
+                )
+                select "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" {key_table_primary_key_name} 
+                from "{settings.KEY_TABLE_NAME}" 
+                join "hierarchy" on "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."{key_table_primary_key_name}"
+                where "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" <> {key_table_primary_key_value}
+                order by "hierarchy"."level" desc;
+            """
+
+            records = await connection.fetch(get_key_table_parents_values_sql)
+
+            self._key_column_values.update(
+                [
+                    record.get('id')
+                    for record in records
+                ]
+            )
+
+            del get_key_table_parents_values_sql
+
+    async def _build_key_column_values_hierarchical_structure(self):
+        """
+        Building tree of hierarchy key table records
+        """
+        logger.info("build tree of enterprises for transfer process")
+
+        key_table = self._dst_database.tables.get(settings.KEY_TABLE_NAME)
+
+        coroutines = [
+            self._get_key_table_parents_values(
+                key_table_primary_key_name=key_table.primary_key.name,
+                key_table_primary_key_value=key_column_value,
+            )
+            for key_column_value in copy(self._key_column_values)
+        ]
+
+        if coroutines:
+            await asyncio.wait(coroutines)
+
+        logger.info(
+            f"transferring enterprises - "
+            f"{make_str_from_iterable(self._key_column_values, with_quotes=True)}"  # noqa
+        )
+
     async def _main(self):
         """
         Run async databaser
@@ -115,8 +189,13 @@ class DatabaserManager:
                 ):
                     await self._dst_database.prepare_structure()
 
-                    await self._dst_database.disable_triggers()
+                await self._dst_database.disable_triggers()
 
+                await asyncio.wait(
+                    [
+                        self._build_key_column_values_hierarchical_structure(),
+                    ]
+                )
                 with StatisticIndexer(
                     self._statistic_manager,
                     TransferringStagesEnum.TRUNCATE_DST_DB_TABLES,
@@ -131,10 +210,8 @@ class DatabaserManager:
                     dst_pool=dst_pool,
                     src_pool=src_pool,
                     statistic_manager=self._statistic_manager,
-                    key_column_ids=settings.KEY_COLUMN_VALUES,
+                    key_column_values=self._key_column_values,
                 )
-
-                await asyncio.wait([collector.build_key_column_ids_structure()])
 
                 with StatisticIndexer(
                     self._statistic_manager,
@@ -150,7 +227,7 @@ class DatabaserManager:
                     dst_pool=dst_pool,
                     src_pool=src_pool,
                     statistic_manager=self._statistic_manager,
-                    key_column_ids=collector.key_column_ids,
+                    key_column_values=self._key_column_values,
                 )
 
                 with StatisticIndexer(
@@ -171,7 +248,7 @@ class DatabaserManager:
                         dst_database=self._dst_database,
                         src_database=self._src_database,
                         statistic_manager=self._statistic_manager,
-                        key_column_ids=collector.key_column_ids,
+                        key_column_values=collector.key_column_ids,
                     )
 
                     await validator_manager.validate()

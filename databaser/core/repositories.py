@@ -66,30 +66,6 @@ class SQLRepository:
         truncate {table_names} cascade;
     """
 
-    KEY_TABLE_PARENTS_IDS_SQL_TEMPLATE = """
-        with recursive hierarchy("id", "parent_id", "level") as (
-            select "{key_table_name}"."id", 
-                "{key_table_name}"."parent_id", 
-                0 
-            from "{key_table_name}" 
-            where "{key_table_name}"."id" = {key_column_id}
-
-            union all
-
-            select
-                "{key_table_name}"."id",
-                "{key_table_name}"."parent_id",
-                "hierarchy"."level" + 1
-            from "{key_table_name}" 
-            join "hierarchy" on "{key_table_name}"."id" = "hierarchy"."parent_id"
-        )
-        select "{key_table_name}"."id" id 
-        from "{key_table_name}" 
-        join "hierarchy" on "{key_table_name}"."id" = "hierarchy"."id"
-        where "{key_table_name}"."id" <> {key_column_id}
-        order by "hierarchy"."level" desc;
-    """
-
     SELECT_TABLES_NAMES_LIST_SQL_TEMPLATE = """
         select table_name
         from information_schema.tables
@@ -284,16 +260,6 @@ class SQLRepository:
         return queries
 
     @classmethod
-    def get_key_table_parents_ids_sql(
-        cls,
-        key_column_id: int,
-    ):
-        return cls.KEY_TABLE_PARENTS_IDS_SQL_TEMPLATE.format(
-            key_table_name=settings.KEY_TABLE_NAME,
-            key_column_id=key_column_id,
-        )
-
-    @classmethod
     def get_select_tables_names_list_sql(
         cls,
         excluded_tables=None,
@@ -384,7 +350,7 @@ class SQLRepository:
         logger.debug(
             f"SQL constraint ids. table name - {table.name}, "
             f"column_name - {constraint_column.name}, "
-            f"key_column_id - {str(key_column_ids_str)}, "
+            f"key_column_value - {str(key_column_ids_str)}, "
             f"with_key_column - {table.with_key_column}, "
             f"primary_key_ids - {make_str_from_iterable(primary_key_ids_list[:10])}"
             f" ({len(primary_key_ids_list)})\n"
