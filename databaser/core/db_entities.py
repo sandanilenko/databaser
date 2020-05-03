@@ -117,6 +117,34 @@ class DstDatabase(BaseDatabase):
 
         logger.info('init dst database')
 
+    @property
+    @lru_cache()
+    def tables_without_generics(self) -> List['DBTable']:
+        """
+        Getting DB tables without generics
+        """
+        return list(
+            filter(
+                lambda t: (
+                    t.name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+                ),
+                self.tables.values(),
+            )
+        )
+
+    @property
+    @lru_cache()
+    def tables_with_key_column(self) -> List['DBTable']:
+        """
+        Getting tables without generics with key column
+        """
+        return list(
+            filter(
+                lambda t: t.with_key_column,
+                self.tables_without_generics,
+            )
+        )
+
     async def _prepare_chunk_tables(
         self,
         chunk_table_names: Iterable[str],

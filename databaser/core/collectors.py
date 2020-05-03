@@ -1,4 +1,5 @@
 import asyncio
+from typing import List
 
 import asyncpg
 from asyncpg import (
@@ -54,7 +55,7 @@ class Collector:
         self._src_database = src_database
         self._dst_pool = dst_pool
         self._src_pool = src_pool
-        self.key_column_ids = key_column_ids
+        self.key_column_ids: List[str] = key_column_ids
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}
@@ -588,26 +589,10 @@ class Collector:
         """
         logger.info("start collecting common tables records ids")
 
-        tables_without_generics = list(
-            filter(
-                lambda t: (
-                    t.name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
-                ),
-                self._dst_database.tables.values(),
-            )
-        )
-
-        tables_with_key_column = list(
-            filter(
-                lambda t: t.with_key_column,
-                tables_without_generics,
-            )
-        )
-
         # обход таблиц с key_column и их соседей
         coroutines = [
             self._collect_importing_ent_table_records_ids(table)
-            for table in tables_with_key_column
+            for table in self._dst_database.tables_with_key_column
         ]
 
         if coroutines:
@@ -637,7 +622,7 @@ class Collector:
         # )
 
         not_transferred_relatives = []
-        for table in tables_without_generics:
+        for table in self._dst_database.tables_without_generics:
             for fk_column in table.not_self_fk_columns:
                 not_transferred_relatives.append(
                     (table.name, fk_column.constraint_table.name)
@@ -650,7 +635,10 @@ class Collector:
         sorted_not_transferred = sorting_result.cyclic + sorting_result.sorted
 
         without_relatives = list(
-            {table.name for table in tables_without_generics}.difference(
+            {
+                table.name
+                for table in self._dst_database.tables_without_generics
+            }.difference(
                 sorted_not_transferred
             )
         )
