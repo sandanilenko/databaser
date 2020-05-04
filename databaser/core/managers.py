@@ -206,10 +206,8 @@ class DatabaserManager:
                 await asyncio.wait([fdw_wrapper.enable()])
 
                 collector = Collector(
-                    dst_database=self._dst_database,
                     src_database=self._src_database,
-                    dst_pool=dst_pool,
-                    src_pool=src_pool,
+                    dst_database=self._dst_database,
                     statistic_manager=self._statistic_manager,
                     key_column_values=self._key_column_values,
                 )
@@ -249,7 +247,7 @@ class DatabaserManager:
                         dst_database=self._dst_database,
                         src_database=self._src_database,
                         statistic_manager=self._statistic_manager,
-                        key_column_values=collector.key_column_ids,
+                        key_column_values=collector._key_column_values,
                     )
 
                     await validator_manager.validate()

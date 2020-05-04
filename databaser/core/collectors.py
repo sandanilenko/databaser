@@ -46,18 +46,14 @@ class Collector:
 
     def __init__(
         self,
-        dst_database: DstDatabase,
         src_database: SrcDatabase,
-        dst_pool: Pool,
-        src_pool: Pool,
+        dst_database: DstDatabase,
         statistic_manager: StatisticManager,
         key_column_values: Set[int],
     ):
         self._dst_database = dst_database
         self._src_database = src_database
-        self._dst_pool = dst_pool
-        self._src_pool = src_pool
-        self.key_column_ids = key_column_values
+        self._key_column_values = key_column_values
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}
@@ -67,7 +63,7 @@ class Collector:
         self.content_type_table = {}
 
     async def _fill_table_rows_count(self, table_name: str):
-        async with self._src_pool.acquire() as connection:
+        async with self._src_database.connection_pool.acquire() as connection:
             table = self._dst_database.tables[table_name]
 
             try:
@@ -119,12 +115,12 @@ class Collector:
 
         logger.info("заполнение значений счетчиков завершено")
 
-    async def _collect_key_table_ids(self):
+    async def _collect_key_table_values(self):
         logger.info("transfer key table records...")
 
         key_table = self._dst_database.tables[settings.KEY_TABLE_NAME]
 
-        key_table.need_imported.update(self.key_column_ids)
+        key_table.need_imported.update(self._key_column_values)
 
         key_table.is_transferred = True
 
@@ -137,7 +133,7 @@ class Collector:
     ):
         if constraint_table_ids_sql:
             logger.debug(constraint_table_ids_sql)
-            async with self._src_pool.acquire() as connection:
+            async with self._src_database.connection_pool.acquire() as connection:
                 try:
                     c_t_ids = await connection.fetch(constraint_table_ids_sql)
                 except asyncpg.PostgresSyntaxError as e:
@@ -161,7 +157,6 @@ class Collector:
         self,
         table: DBTable,
         column: DBColumn,
-        key_column_ids=(),
         table_pk_ids=(),
         where_conditions_columns=(),
         is_revert=False,
@@ -179,7 +174,7 @@ class Collector:
         constraint_table_ids_sql_list = await SQLRepository.get_constraint_table_ids_sql(
             table=table,
             constraint_column=column,
-            key_column_ids=key_column_ids,
+            key_column_ids=self._key_column_values,
             primary_key_ids=table_pk_ids,
             where_conditions_columns=where_conditions_columns,
             is_revert=is_revert,
@@ -207,9 +202,8 @@ class Collector:
         )
 
         rev_ids = await self._get_constraint_table_ids(
-            rev_table,
-            fk_column,
-            self.key_column_ids,
+            table=rev_table,
+            column=fk_column,
             table_pk_ids=rev_table_pk_ids,
             is_revert=True,
         )
@@ -287,9 +281,8 @@ class Collector:
             return
 
         tasks = await asyncio.wait([self._get_constraint_table_ids(
-            table,
-            table.primary_key,
-            self.key_column_ids,
+            table=table,
+            column=table.primary_key,
             where_conditions_columns=where_conditions,
         )])
 
@@ -326,9 +319,8 @@ class Collector:
 
         if not table.need_imported:
             all_records = await self._get_constraint_table_ids(
-                table,
-                table.primary_key,
-                key_column_ids=self.key_column_ids,
+                table=table,
+                column=table.primary_key,
             )
 
             table.need_imported.update(all_records)
@@ -384,16 +376,14 @@ class Collector:
         # идентификаторы записей
         if table.with_key_column:
             fk_table_ids = await self._get_constraint_table_ids(
-                table,
-                column,
-                key_column_ids=self.key_column_ids,
+                table=table,
+                column=column,
             )
         else:
             pk_ids = pk_ids if not table.is_full_transferred else []
             fk_table_ids = await self._get_constraint_table_ids(
-                table,
-                column,
-                key_column_ids=self.key_column_ids,
+                table=table,
+                column=column,
                 table_pk_ids=pk_ids,
             )
 
@@ -487,7 +477,6 @@ class Collector:
         need_import_ids = await self._get_constraint_table_ids(
             table=table,
             column=table.primary_key,
-            key_column_ids=self.key_column_ids,
         )
 
         if need_import_ids:
@@ -655,9 +644,8 @@ class Collector:
         }
 
         need_imported = await self._get_constraint_table_ids(
-            target_table,
-            target_table.primary_key,
-            key_column_ids=self.key_column_ids,
+            table=target_table,
+            column=target_table.primary_key,
             where_conditions_columns=where_conditions,
         )
 
@@ -714,7 +702,7 @@ class Collector:
             self._statistic_manager,
             TransferringStagesEnum.TRANSFER_KEY_TABLE,
         ):
-            await asyncio.wait([self._collect_key_table_ids()])
+            await asyncio.wait([self._collect_key_table_values()])
 
         with StatisticIndexer(
             self._statistic_manager,
