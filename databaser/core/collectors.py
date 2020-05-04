@@ -170,13 +170,14 @@ class Collector:
         except AttributeError as e:
             logger.warning(f"{str(e)} --- _get_table_column_values")
             return set()
+
         # формирование запроса на получения идентификаторов записей
         # внешней таблицы
-        constraint_table_ids_sql_list = await SQLRepository.get_constraint_table_ids_sql(
+        constraint_table_ids_sql_list = await SQLRepository.get_table_column_values_sql(
             table=table,
-            constraint_column=column,
-            key_column_ids=self._key_column_values,
-            primary_key_ids=primary_key_values,
+            column=column,
+            key_column_values=self._key_column_values,
+            primary_key_values=primary_key_values,
             where_conditions_columns=where_conditions_columns,
             is_revert=is_revert,
         )

@@ -1,7 +1,11 @@
 import copy
 from typing import (
+    Dict,
     Iterable,
     List,
+    Optional,
+    Set,
+    Union,
 )
 
 import settings
@@ -138,7 +142,7 @@ class SQLRepository:
         select setval('{seq_name}', {seq_val});
     """
 
-    SELECT_CONSTRAINT_TABLE_IDS_TEMPLATE = """
+    SELECT_TABLE_COLUMN_VALUES_TEMPLATE = """
         select "{constraint_column_name}"  from "{table_name}" {where_conditions};
     """
 
@@ -327,36 +331,34 @@ class SQLRepository:
         )
 
     @classmethod
-    async def get_constraint_table_ids_sql(
+    async def get_table_column_values_sql(
         cls,
         table,
-        constraint_column,
-        key_column_ids=None,
-        primary_key_ids=None,
-        where_conditions_columns=None,
+        column,
+        key_column_values: Set[int],
+        primary_key_values: Optional[Iterable[Union[int, str]]] = None,
+        where_conditions_columns: Optional[Dict[str, Set[Union[int, str]]]] = None,  # noqa
         is_revert=False,
     ) -> list:
         """
         Метод получения запроса получения идентификаторов таблицы с указанием
         условий
         """
-        key_column_ids_str = make_str_from_iterable(key_column_ids)
+        primary_key_values_list = []
 
-        primary_key_ids_list = []
-
-        if primary_key_ids:
-            primary_key_ids_list = list(primary_key_ids)
+        if primary_key_values:
+            primary_key_values_list = list(primary_key_values)
 
         logger.debug(
             f"SQL constraint ids. table name - {table.name}, "
-            f"column_name - {constraint_column.name}, "
-            f"key_column_value - {str(key_column_ids_str)}, "
+            f"column_name - {column.name}, "
+            f"key_column_value - {str(key_column_values)}, "
             f"with_key_column - {table.with_key_column}, "
-            f"primary_key_ids - {make_str_from_iterable(primary_key_ids_list[:10])}"
-            f" ({len(primary_key_ids_list)})\n"
+            f"primary_key_ids - {make_str_from_iterable(primary_key_values_list[:10])}"
+            f" ({len(primary_key_values_list)})\n"
         )
 
-        del primary_key_ids_list
+        del primary_key_values_list
 
         if where_conditions_columns:
             for c, v in where_conditions_columns.items():
@@ -471,24 +473,21 @@ class SQLRepository:
         sql_result_list = []
         if where_conditions_combinations:
             for where_conditions in where_conditions_combinations:
-                sql_result = cls._select_constraint_table_ids_item(
-                    cls.SELECT_CONSTRAINT_TABLE_IDS_TEMPLATE,
-                    where_conditions,
-                    primary_key_ids,
-                    table,
-                    constraint_column,
-                    key_column_ids_str,
+                sql_result = cls._select_table_column_values_part_sql(
+                    table=table,
+                    column=column,
+                    key_column_values=key_column_values,
+                    primary_key_values=primary_key_values,
+                    where_conditions=where_conditions,
                 )
                 if sql_result:
                     sql_result_list.append(sql_result)
         else:
-            sql_result = cls._select_constraint_table_ids_item(
-                cls.SELECT_CONSTRAINT_TABLE_IDS_TEMPLATE,
-                [],
-                primary_key_ids,
-                table,
-                constraint_column,
-                key_column_ids_str,
+            sql_result = cls._select_table_column_values_part_sql(
+                table=table,
+                column=column,
+                key_column_values=key_column_values,
+                primary_key_values=primary_key_values,
             )
 
             if sql_result:
@@ -499,14 +498,13 @@ class SQLRepository:
         return sql_result_list
 
     @classmethod
-    def _select_constraint_table_ids_item(
+    def _select_table_column_values_part_sql(
         cls,
-        sql_template,
-        where_conditions,
-        primary_key_ids,
         table,
-        constraint_column,
-        key_column_ids_str,
+        column,
+        key_column_values: Set[int],
+        primary_key_values: Optional[Iterable[Union[int, str]]] = None,
+        where_conditions: Optional[Iterable[str]] = (),
     ):
         # отфильтруем все 1
         where_conditions_filtering = list(
@@ -523,10 +521,10 @@ class SQLRepository:
         if where_conditions:
             where_conditions_str = f'{" and ".join(where_conditions)}'
 
-        if primary_key_ids:
+        if primary_key_values:
             primary_key_ids_str = cls._get_ids_str_by_column_type(
                 column=table.primary_key,
-                ids=primary_key_ids
+                ids=primary_key_values
             )
 
             pk_condition_sql = (
@@ -545,9 +543,9 @@ class SQLRepository:
 
             logger.debug(f"find key_column - {key_column.name}")
 
-            if key_column_ids_str:
+            if key_column_values:
                 key_column_ids_sql = (
-                    f"{key_column.name} in ({key_column_ids_str}) or "
+                    f"{key_column.name} in ({make_str_from_iterable(key_column_values)}) or "
                     f"{key_column.name} isnull"
                 )
 
@@ -561,12 +559,12 @@ class SQLRepository:
         if where_conditions_str:
             where_conditions_str = f"where {where_conditions_str}"
 
-        result_sql = sql_template.format(
-            constraint_column_name=constraint_column.name,
+        result_sql = cls.SELECT_TABLE_COLUMN_VALUES_TEMPLATE.format(
+            constraint_column_name=column.name,
             table_name=table.name,
             where_conditions=where_conditions_str,
             constraint_column_with_type=(
-                constraint_column.get_column_name_with_type()
+                column.get_column_name_with_type()
             ),
         )
 
