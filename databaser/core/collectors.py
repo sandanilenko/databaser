@@ -2,8 +2,10 @@ import asyncio
 from typing import (
     Dict,
     Iterable,
+    List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -339,112 +341,127 @@ class Collector:
             f"finished collecting records ids of table \"{table.name}\""
         )
 
-    async def _recursively_collecting_fk_table_chunk_data(
+    async def _recursively_preparing_foreign_table_chunk(
         self,
-        need_import_ids_chunk,
-        deep_without_key_table,
-        fk_table,
-        stack_tables,
+        foreign_table: DBTable,
+        foreign_table_pks_chunk: List[int],
+        stack_tables: Tuple[str],
+        deep_without_key_table: int,
     ):
-        dwe = (
-            deep_without_key_table - 1
-            if not fk_table.with_key_column
-            else deep_without_key_table
+        """
+        Recursively preparing foreign table chunk
+        """
+        dwkt = (
+            deep_without_key_table - 1 if
+            not foreign_table.with_key_column else
+            deep_without_key_table
         )
 
-        await self._recursively_collecting_table_data(
-            fk_table,
-            need_import_ids_chunk,
-            stack_tables,
-            deep_without_key_table=dwe,
+        await self._recursively_preparing_table(
+            table=foreign_table,
+            need_transfer_pks=foreign_table_pks_chunk,
+            stack_tables=stack_tables,
+            deep_without_key_table=dwkt,
         )
 
-        del dwe
-        del need_import_ids_chunk[:]
+        del dwkt
+        del foreign_table_pks_chunk[:]
 
-    async def _recursively_collecting_fk_table_data(
+    async def _recursively_preparing_foreign_table(
         self,
+        table: DBTable,
         column: DBColumn,
-        stack_tables,
-        table,
-        deep_without_key_table,
-        pk_ids,
+        need_transfer_pks: Iterable[int],
+        stack_tables: Tuple[str],
+        deep_without_key_table: int,
     ):
-        fk_table = self._dst_database.tables[column.constraint_table.name]
+        """
+        Recursively preparing foreign table
+        """
+        foreign_table = self._dst_database.tables[column.constraint_table.name]
 
         # если таблица уже есть в стеке импорта таблиц, то он нас не
         # интересует; если талица с key_column, то записи в любом случае
         # будут импортированы
-        if fk_table in stack_tables or fk_table.with_key_column:
+        if (
+            foreign_table in stack_tables or
+            foreign_table.with_key_column
+        ):
             return
 
         # Если таблица с key_column, то нет необходимости пробрасывать
         # идентификаторы записей
         if table.with_key_column:
-            fk_table_ids = await self._get_table_column_values(
+            foreign_table_pks = await self._get_table_column_values(
                 table=table,
                 column=column,
             )
         else:
-            pk_ids = pk_ids if not table.is_full_transferred else []
-            fk_table_ids = await self._get_table_column_values(
+            need_transfer_pks = (
+                need_transfer_pks if
+                not table.is_full_transferred else
+                ()
+            )
+
+            foreign_table_pks = await self._get_table_column_values(
                 table=table,
                 column=column,
-                primary_key_values=pk_ids,
+                primary_key_values=need_transfer_pks,
             )
 
         # если найдены значения внешних ключей отличающиеся от null, то
         # записи из внешней талицы с этими идентификаторами должны быть
         # импортированы
-        if fk_table_ids:
+        if foreign_table_pks:
             logger.debug(
                 f"table - {table.name}, column - {column.name} - reversed "
-                f"collecting of fk_ids ----- {fk_table.name}"
+                f"collecting of fk_ids ----- {foreign_table.name}"
             )
 
-            fk_diff = fk_table_ids.difference(fk_table.need_transfer_pks)
+            foreign_table_pks_difference = foreign_table_pks.difference(
+                foreign_table.need_transfer_pks
+            )
 
             # если есть разница между предполагаемыми записями для импорта
             # и уже выбранными ранее, то разницу нужно импортировать
-            if fk_diff:
-                fk_table.need_transfer_pks.update(fk_diff)
+            if foreign_table_pks_difference:
+                foreign_table.need_transfer_pks.update(
+                    foreign_table_pks_difference
+                )
 
-                need_import_ids_chunks = make_chunks(
-                    iterable=fk_diff,
+                foreign_table_pks_difference_chunks = make_chunks(
+                    iterable=foreign_table_pks_difference,
                     size=self.CHUNK_SIZE,
                     is_list=True,
                 )
 
                 coroutines = [
-                    self._recursively_collecting_fk_table_chunk_data(
-                        need_import_ids_chunk,
-                        deep_without_key_table,
-                        fk_table,
-                        stack_tables,
+                    self._recursively_preparing_foreign_table_chunk(
+                        foreign_table=foreign_table,
+                        foreign_table_pks_chunk=foreign_table_pks_difference_chunk,  # noqa
+                        stack_tables=stack_tables,
+                        deep_without_key_table=deep_without_key_table,
                     )
-                    for need_import_ids_chunk in need_import_ids_chunks
+                    for foreign_table_pks_difference_chunk in foreign_table_pks_difference_chunks  # noqa
                 ]
 
                 if coroutines:
                     await asyncio.wait(coroutines)
 
-            del fk_diff
+            del foreign_table_pks_difference
 
-        del fk_table_ids
+        del foreign_table_pks
 
-    async def _recursively_collecting_table_data(
+    async def _recursively_preparing_table(
         self,
-        table,
-        pk_ids,
+        table: DBTable,
+        need_transfer_pks: List[int],
         stack_tables=(),
         deep_without_key_table=None,
     ):
         """
-        :param DBTable table:
-        :param set pk_ids:
-        :return:
+        Recursively preparing table
         """
-        # if is_revert_rel and not deep_without_key_table:
         if not deep_without_key_table:
             logger.debug("Max deep without key table")
             return
@@ -454,8 +471,12 @@ class Collector:
         logger.debug(make_str_from_iterable([t.name for t in stack_tables]))
 
         coroutines = [
-            self._recursively_collecting_fk_table_data(
-                column, stack_tables, table, deep_without_key_table, pk_ids
+            self._recursively_preparing_foreign_table(
+                table=table,
+                column=column,
+                need_transfer_pks=need_transfer_pks,
+                stack_tables=stack_tables,
+                deep_without_key_table=deep_without_key_table,
             )
             for column in table.not_self_fk_columns
         ]
@@ -463,43 +484,52 @@ class Collector:
         if coroutines:
             await asyncio.wait(coroutines)
 
-    async def _collect_recursively_ent_table(
+    async def _recursively_preparing_table_with_key_column(
         self,
-        need_import_ids_chunk,
-        table,
+        table: DBTable,
+        need_transfer_pks_chunk: List[int],
     ):
-        await self._recursively_collecting_table_data(
-            table,
-            need_import_ids_chunk,
+        """
+        Recursively preparing table with key column
+        """
+        await self._recursively_preparing_table(
+            table=table,
+            need_transfer_pks=need_transfer_pks_chunk,
             deep_without_key_table=1,
         )
 
-        del need_import_ids_chunk[:]
+        del need_transfer_pks_chunk[:]
 
-    async def _prepare_tables_with_key_column(self, table):
+    async def _prepare_tables_with_key_column(
+        self,
+        table: DBTable,
+    ):
+        """
+        Preparing tables with key column and siblings
+        """
         logger.info(
             f'start preparing table with key column "{table.name}"'
         )
-        need_import_ids = await self._get_table_column_values(
+        need_transfer_pks = await self._get_table_column_values(
             table=table,
             column=table.primary_key,
         )
 
-        if need_import_ids:
-            table.need_transfer_pks.update(need_import_ids)
+        if need_transfer_pks:
+            table.need_transfer_pks.update(need_transfer_pks)
 
-            need_import_ids_chunks = make_chunks(
-                iterable=need_import_ids,
+            need_transfer_pks_chunks = make_chunks(
+                iterable=need_transfer_pks,
                 size=self.CHUNK_SIZE,
                 is_list=True,
             )
 
             coroutines = [
-                self._collect_recursively_ent_table(
-                    need_import_ids_chunk=need_import_ids_chunk,
+                self._recursively_preparing_table_with_key_column(
                     table=table,
+                    need_transfer_pks_chunk=need_transfer_pks_chunk,
                 )
-                for need_import_ids_chunk in need_import_ids_chunks
+                for need_transfer_pks_chunk in need_transfer_pks_chunks
             ]
 
             if coroutines:
@@ -507,7 +537,7 @@ class Collector:
 
         table.is_ready_for_transferring = True
 
-        del need_import_ids
+        del need_transfer_pks
 
         logger.info(
             f'finished preparing table with key column "{table.name}"'
