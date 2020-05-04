@@ -158,7 +158,7 @@ class Collector:
         self,
         table: DBTable,
         column: DBColumn,
-        primary_key_values: Optional[Iterable[Union[int, str]]] = None,
+        primary_key_values: Iterable[Union[int, str]] = (),
         where_conditions_columns: Optional[Dict[str, Set[Union[int, str]]]] = None,  # noqa
         is_revert=False,
     ) -> set:

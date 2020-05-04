@@ -4,12 +4,15 @@ from distutils.util import (
     strtobool,
 )
 
+from core.enums import (
+    LogLevelEnum,
+)
 from core.helpers import (
     logger,
 )
 
 # Logger
-LOG_LEVEL = os.environ.get('DATABASER_LOG_LEVEL', 'INFO')
+LOG_LEVEL = os.environ.get('DATABASER_LOG_LEVEL', LogLevelEnum.INFO)
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
 # Src database connection params

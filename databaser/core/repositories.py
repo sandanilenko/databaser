@@ -12,6 +12,7 @@ import settings
 from core.enums import (
     ConstraintTypesEnum,
     DataTypesEnum,
+    LogLevelEnum,
 )
 from core.helpers import (
     logger,
@@ -336,7 +337,7 @@ class SQLRepository:
         table,
         column,
         key_column_values: Set[int],
-        primary_key_values: Optional[Iterable[Union[int, str]]] = None,
+        primary_key_values: Iterable[Union[int, str]] = (),
         where_conditions_columns: Optional[Dict[str, Set[Union[int, str]]]] = None,  # noqa
         is_revert=False,
     ) -> list:
@@ -344,34 +345,28 @@ class SQLRepository:
         Метод получения запроса получения идентификаторов таблицы с указанием
         условий
         """
-        primary_key_values_list = []
+        if settings.LOG_LEVEL == LogLevelEnum.INFO:
+            logger.debug(
+                f"SQL constraint ids. table name - {table.name}, "
+                f"column_name - {column.name}, "
+                f"key_column_value - {str(key_column_values)}, "
+                f"with_key_column - {table.with_key_column}, "
+                f"primary_key_ids - {make_str_from_iterable(list(primary_key_values)[:10])}"
+                f" ({len(primary_key_values)})\n"
+            )
 
-        if primary_key_values:
-            primary_key_values_list = list(primary_key_values)
+            if where_conditions_columns:
+                for c, v in where_conditions_columns.items():
+                    v_list = list(v)
 
-        logger.debug(
-            f"SQL constraint ids. table name - {table.name}, "
-            f"column_name - {column.name}, "
-            f"key_column_value - {str(key_column_values)}, "
-            f"with_key_column - {table.with_key_column}, "
-            f"primary_key_ids - {make_str_from_iterable(primary_key_values_list[:10])}"
-            f" ({len(primary_key_values_list)})\n"
-        )
+                    condition_str = f"{c}={make_str_from_iterable(v_list[:10])}"
 
-        del primary_key_values_list
+                    logger.debug(
+                        f"where condition --- {condition_str} ({len(v_list)})"
+                    )
 
-        if where_conditions_columns:
-            for c, v in where_conditions_columns.items():
-                v_list = list(v)
-
-                condition_str = f"{c}={make_str_from_iterable(v_list[:10])}"
-
-                logger.debug(
-                    f"where condition --- {condition_str} ({len(v_list)})"
-                )
-
-                del v_list
-                del condition_str
+                    del v_list
+                    del condition_str
 
         where_conditions_combinations = []
 

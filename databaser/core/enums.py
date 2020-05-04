@@ -61,3 +61,21 @@ class TransferringStagesEnum:
         TRANSFERRING_COLLECTED_DATA: "Transferring collected data",
         UPDATE_SEQUENCES: "Update sequences",
     }
+
+
+class LogLevelEnum:
+    NOTSET = 'NOTSET'
+    DEBUG = 'DEBUG'
+    INFO = 'INFO'
+    WARNING = 'WARNING'
+    ERROR = 'ERROR'
+    CRITICAL = 'CRITICAL'
+
+    values = {
+        NOTSET: 'notset',
+        DEBUG: 'debug',
+        INFO: 'info',
+        WARNING: 'warning',
+        ERROR: 'error',
+        CRITICAL: 'critical',
+    }
