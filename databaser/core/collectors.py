@@ -123,7 +123,7 @@ class Collector:
 
         key_table.need_imported.update(self._key_column_values)
 
-        key_table.is_transferred = True
+        key_table.is_ready_for_transferring = True
 
         logger.info("transfer key table records finished!")
 
@@ -317,7 +317,7 @@ class Collector:
 
         rev_coroutines = [
             self._collect_importing_revert_tables_data(rev_table_name, table)
-            for rev_table_name, is_transferred in table.revert_fk_tables.items()
+            for rev_table_name, is_ready_for_transferring in table.revert_fk_tables.items()
         ]
 
         if rev_coroutines:
@@ -333,7 +333,7 @@ class Collector:
 
             del all_records
 
-        table.is_transferred = True
+        table.is_ready_for_transferring = True
 
         logger.info(
             f"finished collecting records ids of table \"{table.name}\""
@@ -505,7 +505,7 @@ class Collector:
             if coroutines:
                 await asyncio.wait(coroutines)
 
-        table.is_transferred = True
+        table.is_ready_for_transferring = True
 
         del need_import_ids
 
@@ -513,7 +513,7 @@ class Collector:
             f"finished collecting records ids of table \"{table.name}\""
         )
 
-    async def _collect_common_tables_records_ids(self):
+    async def _collect_common_tables_records(self):
         """
         Метод сбора данных для дальнейшего импорта в целевую базу. Первоначально
         производится сбор данных из таблиц с key_column и всех таблиц, которые их
@@ -522,9 +522,6 @@ class Collector:
         производится сбор записей таблиц, из которых не был произведен сбор
         данных. Эти таблицы находятся дальше чем одна таблица от таблиц с
         key_column.
-        Для верного обхода у таблиц существует параметр
-        transferred_rel_tables_percent, который указывает на часть таблиц,
-        которая была импортирована
         """
         logger.info("start collecting common tables records ids")
 
@@ -540,7 +537,7 @@ class Collector:
         not_transferred_tables = list(
             filter(
                 lambda t: (
-                    not t.is_transferred
+                    not t.is_ready_for_transferring
                     and t.name
                     not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
                 ),
@@ -578,7 +575,7 @@ class Collector:
         # явно ломаю асинхронность, т.к. порядок импорта таблиц важен
         for table_name in sorted_not_transferred:
             table = self._dst_database.tables[table_name]
-            if not table.is_transferred:
+            if not table.is_ready_for_transferring:
                 await self._collect_importing_fk_tables_records_ids(
                     table
                 )
@@ -714,7 +711,7 @@ class Collector:
             self._statistic_manager,
             TransferringStagesEnum.COLLECT_COMMON_TABLES_RECORDS_IDS
         ):
-            await asyncio.wait([self._collect_common_tables_records_ids()])
+            await asyncio.wait([self._collect_common_tables_records()])
 
         with StatisticIndexer(
             self._statistic_manager,

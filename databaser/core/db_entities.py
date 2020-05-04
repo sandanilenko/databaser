@@ -325,7 +325,7 @@ class DBTable(object):
 
     __slots__ = (
         'name',
-        '_is_transferred',
+        '_is_ready_for_transferring',
         'full_count',
         'max_id',
         'columns',
@@ -333,7 +333,6 @@ class DBTable(object):
         '_key_column',
         'revert_fk_tables',
         'need_imported',
-        'transferred_rel_tables_percent',
         'transferred_ids',
     )
 
@@ -345,7 +344,9 @@ class DBTable(object):
 
     def __init__(self, name):
         self.name = name
-        self._is_transferred = False
+
+        # Table is ready for transferring
+        self._is_ready_for_transferring = False
         self.full_count = 0
         self.max_id = 0
         self.columns: Dict[str, 'DBColumn'] = {}
@@ -358,9 +359,6 @@ class DBTable(object):
 
         # множество идентификаторов записей предназначенных для импорта
         self.need_imported = set()
-
-        # параметр указывает процент соседних таблиц, которые были импортированы
-        self.transferred_rel_tables_percent = 1
 
         self.transferred_ids = set()
 
@@ -390,12 +388,15 @@ class DBTable(object):
             return primary_keys[0]
 
     @property
-    def is_transferred(self):
-        return self._is_transferred
+    def is_ready_for_transferring(self) -> bool:
+        """
+        Table is ready for transferring
+        """
+        return self._is_ready_for_transferring
 
-    @is_transferred.setter
-    def is_transferred(self, is_transferred):
-        self._is_transferred = is_transferred
+    @is_ready_for_transferring.setter
+    def is_ready_for_transferring(self, is_ready_for_transferring):
+        self._is_ready_for_transferring = is_ready_for_transferring
 
     @property
     def is_full_transferred(self):
