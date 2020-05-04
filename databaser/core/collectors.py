@@ -1,14 +1,15 @@
 import asyncio
 from typing import (
+    Dict,
+    Iterable,
+    Optional,
     Set,
+    Union,
 )
 
 import asyncpg
 from asyncpg import (
     UndefinedFunctionError,
-)
-from asyncpg.pool import (
-    Pool,
 )
 
 import settings
@@ -153,12 +154,12 @@ class Collector:
                 del c_t_ids
                 del constraint_table_ids_sql
 
-    async def _get_constraint_table_ids(
+    async def _get_table_column_values(
         self,
         table: DBTable,
         column: DBColumn,
-        table_pk_ids=(),
-        where_conditions_columns=(),
+        primary_key_values: Optional[Iterable[Union[int, str]]] = None,
+        where_conditions_columns: Optional[Dict[str, Set[Union[int, str]]]] = None,  # noqa
         is_revert=False,
     ) -> set:
         # если таблица находится в исключенных, то ее записи не нужно
@@ -167,7 +168,7 @@ class Collector:
             if column.constraint_table.name in settings.EXCLUDED_TABLES:
                 return set()
         except AttributeError as e:
-            logger.warning(f"{str(e)} --- _get_constraint_table_ids")
+            logger.warning(f"{str(e)} --- _get_table_column_values")
             return set()
         # формирование запроса на получения идентификаторов записей
         # внешней таблицы
@@ -175,7 +176,7 @@ class Collector:
             table=table,
             constraint_column=column,
             key_column_ids=self._key_column_values,
-            primary_key_ids=table_pk_ids,
+            primary_key_ids=primary_key_values,
             where_conditions_columns=where_conditions_columns,
             is_revert=is_revert,
         )
@@ -201,10 +202,10 @@ class Collector:
             else []
         )
 
-        rev_ids = await self._get_constraint_table_ids(
+        rev_ids = await self._get_table_column_values(
             table=rev_table,
             column=fk_column,
-            table_pk_ids=rev_table_pk_ids,
+            primary_key_values=rev_table_pk_ids,
             is_revert=True,
         )
 
@@ -245,7 +246,7 @@ class Collector:
             f"start collecting records ids of table \"{table.name}\""
         )
         # обход таблиц связанных через внешние ключи
-        where_conditions = {}
+        where_conditions_columns = {}
 
         if table.fks_with_key_column:
             fk_columns = table.fks_with_key_column
@@ -273,17 +274,21 @@ class Collector:
 
             if fk_table.need_imported:
                 if not fk_table.is_full_transferred:
-                    where_conditions[fk_column.name] = fk_table.need_imported
+                    where_conditions_columns[fk_column.name] = fk_table.need_imported
                 else:
                     with_full_transferred_table = True
 
-        if fk_columns and not where_conditions and not with_full_transferred_table:
+        if (
+            fk_columns and
+            not where_conditions_columns and
+            not with_full_transferred_table
+        ):
             return
 
-        tasks = await asyncio.wait([self._get_constraint_table_ids(
+        tasks = await asyncio.wait([self._get_table_column_values(
             table=table,
             column=table.primary_key,
-            where_conditions_columns=where_conditions,
+            where_conditions_columns=where_conditions_columns,
         )])
 
         fk_ids = (
@@ -295,7 +300,7 @@ class Collector:
             None
         )
 
-        if fk_columns and where_conditions and not fk_ids:
+        if fk_columns and where_conditions_columns and not fk_ids:
             return
 
         table.need_imported.update(fk_ids)
@@ -318,7 +323,7 @@ class Collector:
             await asyncio.wait(rev_coroutines)
 
         if not table.need_imported:
-            all_records = await self._get_constraint_table_ids(
+            all_records = await self._get_table_column_values(
                 table=table,
                 column=table.primary_key,
             )
@@ -375,16 +380,16 @@ class Collector:
         # Если таблица с key_column, то нет необходимости пробрасывать
         # идентификаторы записей
         if table.with_key_column:
-            fk_table_ids = await self._get_constraint_table_ids(
+            fk_table_ids = await self._get_table_column_values(
                 table=table,
                 column=column,
             )
         else:
             pk_ids = pk_ids if not table.is_full_transferred else []
-            fk_table_ids = await self._get_constraint_table_ids(
+            fk_table_ids = await self._get_table_column_values(
                 table=table,
                 column=column,
-                table_pk_ids=pk_ids,
+                primary_key_values=pk_ids,
             )
 
         # если найдены значения внешних ключей отличающиеся от null, то
@@ -474,7 +479,7 @@ class Collector:
         logger.info(
             f"start collecting records ids of table \"{table.name}\""
         )
-        need_import_ids = await self._get_constraint_table_ids(
+        need_import_ids = await self._get_table_column_values(
             table=table,
             column=table.primary_key,
         )
@@ -643,7 +648,7 @@ class Collector:
             "content_type_id": [self.content_type_table[rel_table.name]],
         }
 
-        need_imported = await self._get_constraint_table_ids(
+        need_imported = await self._get_table_column_values(
             table=target_table,
             column=target_table.primary_key,
             where_conditions_columns=where_conditions,
