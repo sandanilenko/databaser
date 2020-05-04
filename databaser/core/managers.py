@@ -13,7 +13,7 @@ from core.collectors import (
     Collector,
 )
 from core.db_entities import (
-    DstDatabase,
+    DBTable, DstDatabase,
     SrcDatabase,
 )
 from core.enums import (
@@ -91,9 +91,9 @@ class DatabaserManager:
         """
         async with self._src_database.connection_pool.acquire() as connection:
             get_key_table_parents_values_sql = f"""
-                with recursive hierarchy("{key_table_primary_key_name}", "parent_id", "level") as (
+                with recursive hierarchy("{key_table_primary_key_name}", "{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}", "level") as (
                     select "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}", 
-                        "{settings.KEY_TABLE_NAME}"."parent_id", 
+                        "{settings.KEY_TABLE_NAME}"."{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}", 
                         0 
                     from "{settings.KEY_TABLE_NAME}" 
                     where "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = {key_table_primary_key_value}
@@ -102,10 +102,10 @@ class DatabaserManager:
         
                     select
                         "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}",
-                        "{settings.KEY_TABLE_NAME}"."parent_id",
+                        "{settings.KEY_TABLE_NAME}"."{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}",
                         "hierarchy"."level" + 1
                     from "{settings.KEY_TABLE_NAME}" 
-                    join "hierarchy" on "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."parent_id"
+                    join "hierarchy" on "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}"
                 )
                 select "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" {key_table_primary_key_name} 
                 from "{settings.KEY_TABLE_NAME}" 
@@ -127,22 +127,26 @@ class DatabaserManager:
 
     async def _build_key_column_values_hierarchical_structure(self):
         """
-        Building tree of hierarchy key table records
+        Building tree of hierarchy key table records by parent_id column
         """
         logger.info("build tree of enterprises for transfer process")
 
-        key_table = self._dst_database.tables.get(settings.KEY_TABLE_NAME)
+        key_table: DBTable = self._dst_database.tables.get(settings.KEY_TABLE_NAME)
+        hierarchy_column = await key_table.get_column_by_name(
+            column_name=settings.KEY_TABLE_HIERARCHY_COLUMN_NAME,
+        )
 
-        coroutines = [
-            self._get_key_table_parents_values(
-                key_table_primary_key_name=key_table.primary_key.name,
-                key_table_primary_key_value=key_column_value,
-            )
-            for key_column_value in copy(self._key_column_values)
-        ]
+        if hierarchy_column:
+            coroutines = [
+                self._get_key_table_parents_values(
+                    key_table_primary_key_name=key_table.primary_key.name,
+                    key_table_primary_key_value=key_column_value,
+                )
+                for key_column_value in copy(self._key_column_values)
+            ]
 
-        if coroutines:
-            await asyncio.wait(coroutines)
+            if coroutines:
+                await asyncio.wait(coroutines)
 
         logger.info(
             f"transferring enterprises - "

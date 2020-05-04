@@ -514,8 +514,7 @@ class DBTable(object):
 
     async def get_column_by_name(self, column_name):
         """
-        :param column_name:
-        :return DbColumn or None:
+        Get table column by name
         """
         return self.columns.get(column_name)
 

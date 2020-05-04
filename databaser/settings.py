@@ -37,6 +37,7 @@ if TEST_MODE:
 KEY_TABLE_NAME = os.environ.get('DATABASER_KEY_TABLE_NAME')
 KEY_COLUMN_NAMES = os.environ.get('DATABASER_KEY_COLUMN_NAMES', '').replace(' ', '').split(',')
 KEY_COLUMN_VALUES = os.environ.get('DATABASER_KEY_COLUMN_VALUES', '').replace(' ', '').split(',')
+KEY_TABLE_HIERARCHY_COLUMN_NAME = os.environ.get('DATABASER_KEY_TABLE_HIERARCHY_COLUMN_NAME', '').replace(' ', '')
 
 EXCLUDED_TABLES = os.environ.get('DATABASER_EXCLUDED_TABLES', '').split(',')
 TABLES_WITH_GENERIC_FOREIGN_KEY = os.environ.get(
