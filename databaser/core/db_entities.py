@@ -332,7 +332,7 @@ class DBTable(object):
         '_with_key_column',
         '_key_column',
         'revert_fk_tables',
-        'need_imported',
+        'need_transfer_pks',
         'transferred_ids',
     )
 
@@ -357,8 +357,8 @@ class DBTable(object):
         # что записи зависимой таблицы были внесены в список для импорта
         self.revert_fk_tables = {}
 
-        # множество идентификаторов записей предназначенных для импорта
-        self.need_imported = set()
+        # Pks of table for transferring
+        self.need_transfer_pks = set()
 
         self.transferred_ids = set()
 
@@ -402,10 +402,10 @@ class DBTable(object):
     def is_full_transferred(self):
         logger.debug(
             f'table - {self.name} -- count table records {self.full_count} and '
-            f'need imported {len(self.need_imported)}'
+            f'need transfer pks {len(self.need_transfer_pks)}'
         )
 
-        if len(self.need_imported) >= self.full_count - self.inaccuracy_count:
+        if len(self.need_transfer_pks) >= self.full_count - self.inaccuracy_count:  # noqa
             logger.info(f'table {self.name} full transferred')
 
             return True
@@ -654,7 +654,7 @@ class DBColumn(object):
     def is_key_column(self):
         return (
             self.name in settings.KEY_COLUMN_NAMES or
-            deep_getattr(self.constraint_table, 'name') == settings.KEY_TABLE_NAME
+            deep_getattr(self.constraint_table, 'name') == settings.KEY_TABLE_NAME  # noqa
         )
 
     @property

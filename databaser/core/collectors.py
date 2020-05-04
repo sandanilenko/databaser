@@ -121,7 +121,7 @@ class Collector:
 
         key_table = self._dst_database.tables[settings.KEY_TABLE_NAME]
 
-        key_table.need_imported.update(self._key_column_values)
+        key_table.need_transfer_pks.update(self._key_column_values)
 
         key_table.is_ready_for_transferring = True
 
@@ -198,7 +198,7 @@ class Collector:
 
     async def _collect_revert_table_ids(self, rev_table, fk_column, table):
         rev_table_pk_ids = (
-            list(rev_table.need_imported)
+            list(rev_table.need_transfer_pks)
             if not rev_table.is_full_transferred
             else []
         )
@@ -211,7 +211,7 @@ class Collector:
         )
 
         if rev_ids:
-            table.need_imported.update(rev_ids)
+            table.need_transfer_pks.update(rev_ids)
 
         del rev_ids
 
@@ -225,7 +225,7 @@ class Collector:
         if rev_table.fks_with_key_column and not table.with_key_column:
             return
 
-        if rev_table.need_imported:
+        if rev_table.need_transfer_pks:
             coroutines = [
                 self._collect_revert_table_ids(rev_table, fk_column, table)
                 for fk_column in rev_table.get_columns_by_constraint_table_name(
@@ -273,9 +273,9 @@ class Collector:
                 fk_column.constraint_table.name
             ]
 
-            if fk_table.need_imported:
+            if fk_table.need_transfer_pks:
                 if not fk_table.is_full_transferred:
-                    where_conditions_columns[fk_column.name] = fk_table.need_imported
+                    where_conditions_columns[fk_column.name] = fk_table.need_transfer_pks
                 else:
                     with_full_transferred_table = True
 
@@ -304,10 +304,10 @@ class Collector:
         if fk_columns and where_conditions_columns and not fk_ids:
             return
 
-        table.need_imported.update(fk_ids)
+        table.need_transfer_pks.update(fk_ids)
 
         logger.debug(
-            f'table "{table.name}" need imported - {len(table.need_imported)}'
+            f'table "{table.name}" need transfer pks - {len(table.need_transfer_pks)}'
         )
 
         del fk_ids
@@ -323,13 +323,13 @@ class Collector:
         if rev_coroutines:
             await asyncio.wait(rev_coroutines)
 
-        if not table.need_imported:
+        if not table.need_transfer_pks:
             all_records = await self._get_table_column_values(
                 table=table,
                 column=table.primary_key,
             )
 
-            table.need_imported.update(all_records)
+            table.need_transfer_pks.update(all_records)
 
             del all_records
 
@@ -402,12 +402,12 @@ class Collector:
                 f"collecting of fk_ids ----- {fk_table.name}"
             )
 
-            fk_diff = fk_table_ids.difference(fk_table.need_imported)
+            fk_diff = fk_table_ids.difference(fk_table.need_transfer_pks)
 
             # если есть разница между предполагаемыми записями для импорта
             # и уже выбранными ранее, то разницу нужно импортировать
             if fk_diff:
-                fk_table.need_imported.update(fk_diff)
+                fk_table.need_transfer_pks.update(fk_diff)
 
                 need_import_ids_chunks = make_chunks(
                     iterable=fk_diff,
@@ -476,9 +476,9 @@ class Collector:
 
         del need_import_ids_chunk[:]
 
-    async def _collect_importing_ent_table_records_ids(self, table):
+    async def _prepare_tables_with_key_column(self, table):
         logger.info(
-            f"start collecting records ids of table \"{table.name}\""
+            f'start preparing table with key column "{table.name}"'
         )
         need_import_ids = await self._get_table_column_values(
             table=table,
@@ -486,7 +486,7 @@ class Collector:
         )
 
         if need_import_ids:
-            table.need_imported.update(need_import_ids)
+            table.need_transfer_pks.update(need_import_ids)
 
             need_import_ids_chunks = make_chunks(
                 iterable=need_import_ids,
@@ -510,10 +510,10 @@ class Collector:
         del need_import_ids
 
         logger.info(
-            f"finished collecting records ids of table \"{table.name}\""
+            f'finished preparing table with key column "{table.name}"'
         )
 
-    async def _collect_common_tables_records(self):
+    async def _prepare_common_tables(self):
         """
         Метод сбора данных для дальнейшего импорта в целевую базу. Первоначально
         производится сбор данных из таблиц с key_column и всех таблиц, которые их
@@ -523,11 +523,11 @@ class Collector:
         данных. Эти таблицы находятся дальше чем одна таблица от таблиц с
         key_column.
         """
-        logger.info("start collecting common tables records ids")
+        logger.info("start preparing common tables for transferring")
 
-        # обход таблиц с key_column и их соседей
+        # preparing tables with key table and siblings for transferring
         coroutines = [
-            self._collect_importing_ent_table_records_ids(table)
+            self._prepare_tables_with_key_column(table)
             for table in self._dst_database.tables_with_key_column
         ]
 
@@ -622,42 +622,44 @@ class Collector:
         rel_table_name: str,
     ):
         if not rel_table_name:
-            logger.debug("not send rel_table_name")
+            logger.debug('not send rel_table_name')
             return
 
         rel_table = self._dst_database.tables.get(rel_table_name)
 
         if not rel_table:
-            logger.debug(f"table {rel_table_name} not found")
+            logger.debug(f'table {rel_table_name} not found')
             return
 
-        object_id_column = await target_table.get_column_by_name("object_id")
+        object_id_column = await target_table.get_column_by_name('object_id')
 
         if rel_table.primary_key.data_type != object_id_column.data_type:
             logger.debug(
-                f"PK of table {rel_table_name} has an incompatible data type"
+                f'pk of table {rel_table_name} has an incompatible data type'
             )
             return
 
-        logger.info("prepare content type generic data")
+        logger.info('prepare content type generic data')
 
         where_conditions = {
-            "object_id": rel_table.need_imported,
-            "content_type_id": [self.content_type_table[rel_table.name]],
+            'object_id': rel_table.need_transfer_pks,
+            'content_type_id': [self.content_type_table[rel_table.name]],
         }
 
-        need_imported = await self._get_table_column_values(
+        need_transfer_pks = await self._get_table_column_values(
             table=target_table,
             column=target_table.primary_key,
             where_conditions_columns=where_conditions,
         )
 
-        logger.info(f"{target_table.name} need imported {len(need_imported)}")
+        logger.info(
+            f'{target_table.name} need transfer pks {len(need_transfer_pks)}'
+        )
 
-        target_table.need_imported.update(need_imported)
+        target_table.need_transfer_pks.update(need_transfer_pks)
 
         del where_conditions
-        del need_imported
+        del need_transfer_pks
 
     async def _prepare_generic_table_data(self, target_table: DBTable):
         """
@@ -711,7 +713,7 @@ class Collector:
             self._statistic_manager,
             TransferringStagesEnum.COLLECT_COMMON_TABLES_RECORDS_IDS
         ):
-            await asyncio.wait([self._collect_common_tables_records()])
+            await asyncio.wait([self._prepare_common_tables()])
 
         with StatisticIndexer(
             self._statistic_manager,

@@ -65,11 +65,11 @@ class Transporter:
         """
         logger.info(
             f"start transferring table \"{table.name}\", "
-            f"need to import - {len(table.need_imported)}"
+            f"need to import - {len(table.need_transfer_pks)}"
         )
 
         need_import_ids_chunks = make_chunks(
-            iterable=table.need_imported,
+            iterable=table.need_transfer_pks,
             size=self.CHUNK_SIZE,
         )
 
@@ -126,7 +126,7 @@ class Transporter:
         logger.info("start transferring data to target db...")
 
         need_imported_tables = filter(
-            lambda table: table.need_imported,
+            lambda table: table.need_transfer_pks,
             self._dst_database.tables.values(),
         )
 
