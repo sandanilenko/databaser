@@ -223,8 +223,6 @@ class DatabaserManager:
                 transporter = Transporter(
                     dst_database=self._dst_database,
                     src_database=self._src_database,
-                    dst_pool=dst_pool,
-                    src_pool=src_pool,
                     statistic_manager=self._statistic_manager,
                     key_column_values=self._key_column_values,
                 )

@@ -252,12 +252,12 @@ class DstDatabase(BaseDatabase):
             f'{len(self.table_names)}'
         )
 
-    async def set_max_tables_sequences(self, dst_pool: Pool):
+    async def set_max_tables_sequences(self):
         """
         Setting max table sequence value as max(id) + 1
         """
         coroutines = [
-            table.set_max_sequence(dst_pool)
+            table.set_max_sequence(self._connection_pool)
             for table in self.tables.values()
         ]
 

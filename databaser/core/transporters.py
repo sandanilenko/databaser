@@ -45,15 +45,11 @@ class Transporter:
         self,
         dst_database: DstDatabase,
         src_database: SrcDatabase,
-        dst_pool: Pool,
-        src_pool: Pool,
         statistic_manager: StatisticManager,
         key_column_values: Set[int],
     ):
         self._dst_database = dst_database
         self._src_database = src_database
-        self._dst_pool = dst_pool
-        self._src_pool = src_pool
         self.key_column_ids = key_column_values
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
@@ -104,7 +100,7 @@ class Transporter:
         logger.debug(f"transfer chunk table data - {table.name}")
 
         transferred_ids = None
-        async with self._dst_pool.acquire() as connection:
+        async with self._dst_database.connection_pool.acquire() as connection:
             try:
                 transferred_ids = await connection.fetch(transfer_sql)
             except (
@@ -149,7 +145,7 @@ class Transporter:
         Обновление значений счетчиков на макситальные
         """
         logger.info("start updating sequences...")
-        await self._dst_database.set_max_tables_sequences(self._dst_pool)
+        await self._dst_database.set_max_tables_sequences()
         logger.info("finished updating sequences!")
 
     async def transfer(self):
