@@ -7,13 +7,17 @@ from datetime import (
 )
 
 import asyncpg
+from asyncpg import (
+    UndefinedFunctionError,
+)
 
 import settings
 from core.collectors import (
     Collector,
 )
 from core.db_entities import (
-    DBTable, DstDatabase,
+    DBTable,
+    DstDatabase,
     SrcDatabase,
 )
 from core.enums import (
@@ -27,6 +31,9 @@ from core.helpers import (
 from core.loggers import (
     StatisticIndexer,
     StatisticManager,
+)
+from core.repositories import (
+    SQLRepository,
 )
 from core.transporters import (
     Transporter,
@@ -153,6 +160,61 @@ class DatabaserManager:
             f"{make_str_from_iterable(self._key_column_values, with_quotes=True)}"  # noqa
         )
 
+    async def _set_table_counters(self, table_name: str):
+        """
+        Filling table max pk and count of records
+        """
+        async with self._src_database.connection_pool.acquire() as connection:
+            table = self._dst_database.tables[table_name]
+
+            try:
+                count_table_records_sql = (
+                    SQLRepository.get_count_table_records(
+                        primary_key=table.primary_key,
+                    )
+                )
+            except AttributeError as e:
+                logger.warning(
+                    f'{str(e)} --- _set_table_counters {"-"*10} - '
+                    f"{table.name}"
+                )
+                raise AttributeError
+            except UndefinedFunctionError:
+                raise UndefinedFunctionError
+
+            res = await connection.fetchrow(count_table_records_sql)
+
+            if res and res[0] and res[1]:
+                logger.debug(
+                    f"table {table_name} with full count {res[0]}, "
+                    f"max pk - {res[1]}"
+                )
+
+                table.full_count = int(res[0])
+
+                table.max_pk = (
+                    int(res[1])
+                    if isinstance(res[1], int)
+                    else table.full_count + 100000
+                )
+
+            del count_table_records_sql
+
+    async def _set_tables_counters(self):
+        logger.info(
+            'start filling tables max pk and count of records..'
+        )
+
+        coroutines = [
+            self._set_table_counters(table_name)
+            for table_name in sorted(self._dst_database.tables.keys())
+        ]
+
+        if coroutines:
+            await asyncio.wait(coroutines)
+
+        logger.info('finished filling tables max pk and count of records.')
+
     async def _main(self):
         """
         Run async databaser
@@ -205,18 +267,18 @@ class DatabaserManager:
 
                 await asyncio.wait([fdw_wrapper.enable()])
 
+                with StatisticIndexer(
+                    self._statistic_manager,
+                    TransferringStagesEnum.FILLING_TABLES_ROWS_COUNTS,
+                ):
+                    await self._set_tables_counters()
+
                 collector = Collector(
                     src_database=self._src_database,
                     dst_database=self._dst_database,
                     statistic_manager=self._statistic_manager,
                     key_column_values=self._key_column_values,
                 )
-
-                with StatisticIndexer(
-                    self._statistic_manager,
-                    TransferringStagesEnum.FILLING_TABLES_ROWS_COUNTS,
-                ):
-                    await collector.fill_tables_rows_counts()
 
                 await collector.collect()
 

@@ -40,12 +40,7 @@ from core.repositories import (
 )
 
 
-class Collector:
-    """
-    Класс комплексной транспортировки, который использует принципы обхода по
-    внешним ключам и по таблицам с обратной связью
-    """
-    CHUNK_SIZE = 70000
+class BaseCollector(metaclass=ABCMeta):
 
     def __init__(
         self,
@@ -57,11 +52,35 @@ class Collector:
         self._dst_database = dst_database
         self._src_database = src_database
         self._key_column_values = key_column_values
+        self._statistic_manager = statistic_manager
+
+    @abstractmethod
+    def collect(self):
+        """
+        Run collecting tables records for transferring
+        """
+
+
+class Collector(BaseCollector):
+    """
+    Класс комплексной транспортировки, который использует принципы обхода по
+    внешним ключам и по таблицам с обратной связью
+    """
+    CHUNK_SIZE = 70000
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            *args,
+            **kwargs,
+        )
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}
         self.filling_tables = set()
-        self._statistic_manager = statistic_manager
 
         self.content_type_table = {}
 
@@ -283,6 +302,9 @@ class Collector:
                     where_conditions_columns[fk_column.name] = fk_table.need_transfer_pks
                 else:
                     with_full_transferred_table = True
+
+        if not fk_columns and table.is_checked:
+            return
 
         if (
             fk_columns and

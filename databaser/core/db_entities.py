@@ -326,7 +326,7 @@ class DBTable(object):
     __slots__ = (
         'name',
         'full_count',
-        'max_id',
+        'max_pk',
         'columns',
         '_is_ready_for_transferring',
         '_is_checked',
@@ -345,7 +345,7 @@ class DBTable(object):
     def __init__(self, name):
         self.name = name
         self.full_count = 0
-        self.max_id = 0
+        self.max_pk = 0
         self.columns: Dict[str, 'DBColumn'] = {}
 
         # Table is ready for transferring
@@ -586,7 +586,7 @@ class DBTable(object):
             if serial_seq_name and serial_seq_name[0]:
                 serial_seq_name = serial_seq_name[0]
 
-                max_val = self.max_id + 100000
+                max_val = self.max_pk + 100000
 
                 set_sequence_val_sql = (
                     SQLRepository.get_set_sequence_value_sql(
