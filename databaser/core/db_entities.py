@@ -325,15 +325,15 @@ class DBTable(object):
 
     __slots__ = (
         'name',
-        '_is_ready_for_transferring',
         'full_count',
         'max_id',
         'columns',
-        '_with_key_column',
+        '_is_ready_for_transferring',
+        '_is_checked',
         '_key_column',
         'revert_fk_tables',
         'need_transfer_pks',
-        'transferred_ids',
+        'transferred_pks',
     )
 
     schema = 'public'
@@ -344,12 +344,15 @@ class DBTable(object):
 
     def __init__(self, name):
         self.name = name
-
-        # Table is ready for transferring
-        self._is_ready_for_transferring = False
         self.full_count = 0
         self.max_id = 0
         self.columns: Dict[str, 'DBColumn'] = {}
+
+        # Table is ready for transferring
+        self._is_ready_for_transferring = False
+
+        # Table is checked in collecting values process
+        self._is_checked: bool = False
 
         self._key_column = None
 
@@ -360,7 +363,7 @@ class DBTable(object):
         # Pks of table for transferring
         self.need_transfer_pks = set()
 
-        self.transferred_ids = set()
+        self.transferred_pks = set()
 
     def __str__(self):
         return (
@@ -399,7 +402,7 @@ class DBTable(object):
         self._is_ready_for_transferring = is_ready_for_transferring
 
     @property
-    def is_full_transferred(self):
+    def is_full_prepared(self):
         logger.debug(
             f'table - {self.name} -- count table records {self.full_count} and '
             f'need transfer pks {len(self.need_transfer_pks)}'
@@ -472,6 +475,14 @@ class DBTable(object):
                 self.not_self_fk_columns
             )
         )
+
+    @property
+    def is_checked(self) -> bool:
+        return self._is_checked
+
+    @is_checked.setter
+    def is_checked(self, value):
+        self._is_checked = value
 
     async def append_column(
         self,

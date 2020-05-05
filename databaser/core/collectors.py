@@ -129,32 +129,34 @@ class Collector:
 
         logger.info("transfer key table records finished!")
 
-    async def _get_constraint_table_ids_part(
+    async def _get_table_column_values_part(
         self,
-        constraint_table_ids_sql,
-        constraint_table_ids,
+        table_column_values_sql: str,
+        table_column_values: List[Union[str, int]],
     ):
-        if constraint_table_ids_sql:
-            logger.debug(constraint_table_ids_sql)
-            async with self._src_database.connection_pool.acquire() as connection:
+        if table_column_values_sql:
+            logger.debug(table_column_values_sql)
+
+            async with self._src_database.connection_pool.acquire() as connection:  # noqa
                 try:
-                    c_t_ids = await connection.fetch(constraint_table_ids_sql)
+                    table_column_values_part = await connection.fetch(table_column_values_sql)  # noqa
                 except asyncpg.PostgresSyntaxError as e:
                     logger.warning(
-                        f"{str(e)} --- {constraint_table_ids_sql} --- "
-                        f"_get_constraint_table_ids_part"
+                        f"{str(e)} --- {table_column_values_sql} --- "
+                        f"_get_table_column_values_part"
                     )
-                    c_t_ids = []
+                    table_column_values_part = []
 
-                constraint_table_ids.extend(
-                    [
-                        item[0]
-                        for item in filter(lambda id_: id_[0] is not None, c_t_ids)
-                    ]
-                )
+                filtered_table_column_values_part = [
+                    record[0]
+                    for record in table_column_values_part if
+                    record[0] is not None
+                ]
 
-                del c_t_ids
-                del constraint_table_ids_sql
+                table_column_values.extend(filtered_table_column_values_part)
+
+                del table_column_values_part
+                del table_column_values_sql
 
     async def _get_table_column_values(
         self,
@@ -163,7 +165,7 @@ class Collector:
         primary_key_values: Iterable[Union[int, str]] = (),
         where_conditions_columns: Optional[Dict[str, Set[Union[int, str]]]] = None,  # noqa
         is_revert=False,
-    ) -> set:
+    ) -> Set[Union[str, int]]:
         # если таблица находится в исключенных, то ее записи не нужно
         # импортировать
         try:
@@ -175,7 +177,7 @@ class Collector:
 
         # формирование запроса на получения идентификаторов записей
         # внешней таблицы
-        constraint_table_ids_sql_list = await SQLRepository.get_table_column_values_sql(
+        table_column_values_sql_list = await SQLRepository.get_table_column_values_sql(
             table=table,
             column=column,
             key_column_values=self._key_column_values,
@@ -183,25 +185,26 @@ class Collector:
             where_conditions_columns=where_conditions_columns,
             is_revert=is_revert,
         )
-        constraint_table_ids = []
+        table_column_values = []
 
-        for constraint_table_ids_sql in constraint_table_ids_sql_list:
-            await self._get_constraint_table_ids_part(
-                constraint_table_ids_sql, constraint_table_ids
+        for table_column_values_sql in table_column_values_sql_list:
+            await self._get_table_column_values_part(
+                table_column_values_sql=table_column_values_sql,
+                table_column_values=table_column_values,
             )
 
-        del constraint_table_ids_sql_list[:]
+        del table_column_values_sql_list[:]
 
-        result = set(constraint_table_ids)
+        unique_table_column_values = set(table_column_values)
 
-        del constraint_table_ids[:]
+        del table_column_values[:]
 
-        return result
+        return unique_table_column_values
 
     async def _collect_revert_table_ids(self, rev_table, fk_column, table):
         rev_table_pk_ids = (
             list(rev_table.need_transfer_pks)
-            if not rev_table.is_full_transferred
+            if not rev_table.is_full_prepared
             else []
         )
 
@@ -276,7 +279,7 @@ class Collector:
             ]
 
             if fk_table.need_transfer_pks:
-                if not fk_table.is_full_transferred:
+                if not fk_table.is_full_prepared:
                     where_conditions_columns[fk_column.name] = fk_table.need_transfer_pks
                 else:
                     with_full_transferred_table = True
@@ -288,31 +291,26 @@ class Collector:
         ):
             return
 
-        tasks = await asyncio.wait([self._get_table_column_values(
+        foreign_table_pks = await self._get_table_column_values(
             table=table,
             column=table.primary_key,
             where_conditions_columns=where_conditions_columns,
-        )])
-
-        fk_ids = (
-            tasks[0].pop().result() if (
-                tasks and
-                tasks[0] and
-                isinstance(tasks[0], set)
-            ) else
-            None
         )
 
-        if fk_columns and where_conditions_columns and not fk_ids:
+        if (
+            fk_columns and
+            where_conditions_columns and
+            not foreign_table_pks
+        ):
             return
 
-        table.need_transfer_pks.update(fk_ids)
+        table.need_transfer_pks.update(foreign_table_pks)
 
         logger.debug(
             f'table "{table.name}" need transfer pks - {len(table.need_transfer_pks)}'
         )
 
-        del fk_ids
+        del foreign_table_pks
 
         # обход таблиц ссылающихся на текущую таблицу
         logger.debug("prepare revert tables")
@@ -379,6 +377,7 @@ class Collector:
         Recursively preparing foreign table
         """
         foreign_table = self._dst_database.tables[column.constraint_table.name]
+        foreign_table.is_checked = True
 
         # если таблица уже есть в стеке импорта таблиц, то он нас не
         # интересует; если талица с key_column, то записи в любом случае
@@ -399,7 +398,7 @@ class Collector:
         else:
             need_transfer_pks = (
                 need_transfer_pks if
-                not table.is_full_transferred else
+                not table.is_full_prepared else
                 ()
             )
 
@@ -515,6 +514,9 @@ class Collector:
             column=table.primary_key,
         )
 
+        table.is_ready_for_transferring = True
+        table.is_checked = True
+
         if need_transfer_pks:
             table.need_transfer_pks.update(need_transfer_pks)
 
@@ -534,8 +536,6 @@ class Collector:
 
             if coroutines:
                 await asyncio.wait(coroutines)
-
-        table.is_ready_for_transferring = True
 
         del need_transfer_pks
 
@@ -568,8 +568,7 @@ class Collector:
             filter(
                 lambda t: (
                     not t.is_ready_for_transferring
-                    and t.name
-                    not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+                    and t.name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
                 ),
                 self._dst_database.tables.values(),
             )
@@ -578,36 +577,39 @@ class Collector:
             f"tables not transferring {str(len(not_transferred_tables))}"
         )
 
-        not_transferred_relatives = []
+        dependencies_between_models = []
         for table in self._dst_database.tables_without_generics:
             for fk_column in table.not_self_fk_columns:
-                not_transferred_relatives.append(
+                dependencies_between_models.append(
                     (table.name, fk_column.constraint_table.name)
                 )
 
-        sorting_result = topological_sort(not_transferred_relatives)
-        sorting_result.cyclic.reverse()
-        sorting_result.sorted.reverse()
+        sorted_dependencies_result = topological_sort(dependencies_between_models)
+        sorted_dependencies_result.cyclic.reverse()
+        sorted_dependencies_result.sorted.reverse()
 
-        sorted_not_transferred = sorting_result.cyclic + sorting_result.sorted
+        sorted_tables_by_dependency = (
+            sorted_dependencies_result.cyclic + sorted_dependencies_result.sorted
+        )
 
         without_relatives = list(
             {
                 table.name
                 for table in self._dst_database.tables_without_generics
             }.difference(
-                sorted_not_transferred
+                sorted_tables_by_dependency
             )
         )
 
-        sorted_not_transferred = without_relatives + sorted_not_transferred
+        sorted_tables_by_dependency = without_relatives + sorted_tables_by_dependency
 
         # явно ломаю асинхронность, т.к. порядок импорта таблиц важен
-        for table_name in sorted_not_transferred:
+        for table_name in sorted_tables_by_dependency:
             table = self._dst_database.tables[table_name]
+
             if not table.is_ready_for_transferring:
                 await self._collect_importing_fk_tables_records_ids(
-                    table
+                    table=table,
                 )
 
         logger.info("finished collecting common tables records ids")

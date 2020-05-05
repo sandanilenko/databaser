@@ -72,7 +72,7 @@ class StatisticManager:
         """
         tables: Iterable[DBTable] = self._database.tables.values()
         tables_counts = {
-            table.name: (len(table.transferred_ids), len(table.need_transfer_pks))
+            table.name: (len(table.transferred_pks), len(table.need_transfer_pks))
             for table in tables
         }
 

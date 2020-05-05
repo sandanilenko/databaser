@@ -115,7 +115,7 @@ class Transporter:
 
         if transferred_ids:
             transferred_ids = [tr[0] for tr in transferred_ids]
-            table.transferred_ids.update(transferred_ids)
+            table.transferred_pks.update(transferred_ids)
 
         del transfer_sql
 
