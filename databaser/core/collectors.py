@@ -381,26 +381,10 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
         )
 
 
-class Collector(BaseCollector):
+class SortedByDependencyTablesCollector(BaseCollector):
     """
-    Класс комплексной транспортировки, который использует принципы обхода по
-    внешним ключам и по таблицам с обратной связью
+    Collector of records of tables sorted by dependency between their
     """
-
-    def __init__(
-        self,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(
-            *args,
-            **kwargs,
-        )
-        # словарь с названиями таблиц и идентификаторами импортированных записей
-        self._transfer_progress_dict = {}
-        self.filling_tables = set()
-
-        self.content_type_table = {}
 
     async def _collect_revert_table_ids(self, rev_table, fk_column, table):
         rev_table_pk_ids = (
@@ -544,17 +528,8 @@ class Collector(BaseCollector):
             f"finished collecting records ids of table \"{table.name}\""
         )
 
-    async def _prepare_common_tables(self):
-        """
-        Метод сбора данных для дальнейшего импорта в целевую базу. Первоначально
-        производится сбор данных из таблиц с key_column и всех таблиц, которые их
-        окружают с глубиной рекурсивного обхода 1. Сюда входят таблицы связанные
-        через внешние ключи и таблицы ссылающиеся на текущую. После чего
-        производится сбор записей таблиц, из которых не был произведен сбор
-        данных. Эти таблицы находятся дальше чем одна таблица от таблиц с
-        key_column.
-        """
-        logger.info("start preparing common tables for transferring")
+    async def collect(self):
+        logger.info('start preparing tables sorted by dependency..')
 
         not_transferred_tables = list(
             filter(
@@ -576,7 +551,8 @@ class Collector(BaseCollector):
                     (table.name, fk_column.constraint_table.name)
                 )
 
-        sorted_dependencies_result = topological_sort(dependencies_between_models)
+        sorted_dependencies_result = topological_sort(
+            dependencies_between_models)
         sorted_dependencies_result.cyclic.reverse()
         sorted_dependencies_result.sorted.reverse()
 
@@ -604,7 +580,29 @@ class Collector(BaseCollector):
                     table=table,
                 )
 
-        logger.info("finished collecting common tables records ids")
+        logger.info('preparing tables sorted by dependency finished.')
+
+
+class GenericTablesCollector(BaseCollector):
+    """
+    Класс комплексной транспортировки, который использует принципы обхода по
+    внешним ключам и по таблицам с обратной связью
+    """
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            *args,
+            **kwargs,
+        )
+        # словарь с названиями таблиц и идентификаторами импортированных записей
+        self._transfer_progress_dict = {}
+        self.filling_tables = set()
+
+        self.content_type_table = {}
 
     async def _prepare_content_type_tables(self):
         """
@@ -727,14 +725,12 @@ class Collector(BaseCollector):
         logger.info("finish collecting")
 
     async def collect(self):
-        with StatisticIndexer(
-            self._statistic_manager,
-            TransferringStagesEnum.COLLECT_COMMON_TABLES_RECORDS_IDS
-        ):
-            await asyncio.wait([self._prepare_common_tables()])
+        logger.info('start preparing generic tables..')
 
         with StatisticIndexer(
             self._statistic_manager,
             TransferringStagesEnum.COLLECT_GENERIC_TABLES_RECORDS_IDS
         ):
             await asyncio.wait([self._collect_generic_tables_records_ids()])
+
+        logger.info('preparing generic tables finished.')

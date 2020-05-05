@@ -19,9 +19,9 @@ from asyncpg import (
 import settings
 from core.collectors import (
     BaseCollector,
-    Collector,
+    GenericTablesCollector,
     KeyTableCollector,
-    TablesWithKeyColumnSiblingsCollector,
+    SortedByDependencyTablesCollector, TablesWithKeyColumnSiblingsCollector,
 )
 from core.db_entities import (
     DBTable,
@@ -336,10 +336,14 @@ class DatabaserManager:
 
 
 class CollectorManager:
+    """
+    Manager of collectors tables records for transferring
+    """
     collectors_classes: List[Type[BaseCollector]] = [
         KeyTableCollector,
         TablesWithKeyColumnSiblingsCollector,
-        Collector,
+        SortedByDependencyTablesCollector,
+        GenericTablesCollector,
     ]
 
     def __init__(
