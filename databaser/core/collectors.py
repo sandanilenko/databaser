@@ -1,4 +1,8 @@
 import asyncio
+from abc import (
+    ABCMeta,
+    abstractmethod,
+)
 from typing import (
     Dict,
     Iterable,
@@ -10,9 +14,6 @@ from typing import (
 )
 
 import asyncpg
-from asyncpg import (
-    UndefinedFunctionError,
-)
 
 import settings
 from core.db_entities import (
@@ -41,6 +42,7 @@ from core.repositories import (
 
 
 class BaseCollector(metaclass=ABCMeta):
+    CHUNK_SIZE = 70000
 
     def __init__(
         self,
@@ -53,100 +55,6 @@ class BaseCollector(metaclass=ABCMeta):
         self._src_database = src_database
         self._key_column_values = key_column_values
         self._statistic_manager = statistic_manager
-
-    @abstractmethod
-    def collect(self):
-        """
-        Run collecting tables records for transferring
-        """
-
-
-class Collector(BaseCollector):
-    """
-    Класс комплексной транспортировки, который использует принципы обхода по
-    внешним ключам и по таблицам с обратной связью
-    """
-    CHUNK_SIZE = 70000
-
-    def __init__(
-        self,
-        *args,
-        **kwargs,
-    ):
-        super().__init__(
-            *args,
-            **kwargs,
-        )
-        self._structured_ent_ids = None
-        # словарь с названиями таблиц и идентификаторами импортированных записей
-        self._transfer_progress_dict = {}
-        self.filling_tables = set()
-
-        self.content_type_table = {}
-
-    async def _fill_table_rows_count(self, table_name: str):
-        async with self._src_database.connection_pool.acquire() as connection:
-            table = self._dst_database.tables[table_name]
-
-            try:
-                table_rows_counts_sql = (
-                    SQLRepository.get_count_table_records(
-                        primary_key=table.primary_key,
-                    )
-                )
-            except AttributeError as e:
-                logger.warning(
-                    f'{str(e)} --- _fill_table_rows_count {"-"*10} - '
-                    f"{table.name}"
-                )
-                raise AttributeError
-            except UndefinedFunctionError:
-                raise UndefinedFunctionError
-
-            res = await connection.fetchrow(table_rows_counts_sql)
-
-            if res and res[0] and res[1]:
-                logger.debug(
-                    f"table {table_name} with full count {res[0]}, "
-                    f"max id - {res[1]}"
-                )
-
-                table.full_count = int(res[0])
-
-                table.max_id = (
-                    int(res[1])
-                    if isinstance(res[1], int)
-                    else table.full_count + 100000
-                )
-
-            del table_rows_counts_sql
-
-    async def fill_tables_rows_counts(self):
-        logger.info(
-            "заполнение количества записей в табилце и максимального значения "
-            "идентификатора.."
-        )
-
-        coroutines = [
-            self._fill_table_rows_count(table_name)
-            for table_name in sorted(self._dst_database.tables.keys())
-        ]
-
-        if coroutines:
-            await asyncio.wait(coroutines)
-
-        logger.info("заполнение значений счетчиков завершено")
-
-    async def _collect_key_table_values(self):
-        logger.info("transfer key table records...")
-
-        key_table = self._dst_database.tables[settings.KEY_TABLE_NAME]
-
-        key_table.need_transfer_pks.update(self._key_column_values)
-
-        key_table.is_ready_for_transferring = True
-
-        logger.info("transfer key table records finished!")
 
     async def _get_table_column_values_part(
         self,
@@ -220,146 +128,37 @@ class Collector(BaseCollector):
 
         return unique_table_column_values
 
-    async def _collect_revert_table_ids(self, rev_table, fk_column, table):
-        rev_table_pk_ids = (
-            list(rev_table.need_transfer_pks)
-            if not rev_table.is_full_prepared
-            else []
-        )
+    @abstractmethod
+    def collect(self):
+        """
+        Run collecting tables records for transferring
+        """
 
-        rev_ids = await self._get_table_column_values(
-            table=rev_table,
-            column=fk_column,
-            primary_key_values=rev_table_pk_ids,
-            is_revert=True,
-        )
 
-        if rev_ids:
-            table.need_transfer_pks.update(rev_ids)
+class KeyTableCollector(BaseCollector):
+    """
+    Collector of key table records
+    """
 
-        del rev_ids
+    async def _prepare_key_table_values(self):
+        logger.info('prepare key table values...')
 
-    async def _collect_importing_revert_tables_data(
-        self, rev_table_name, table
-    ):
-        constraint_types_for_importing = [ConstraintTypesEnum.FOREIGN_KEY]
-        rev_table = self._dst_database.tables[rev_table_name]
-        logger.info(f"prepare revert table {rev_table_name}")
+        key_table = self._dst_database.tables[settings.KEY_TABLE_NAME]
 
-        if rev_table.fks_with_key_column and not table.with_key_column:
-            return
+        key_table.need_transfer_pks.update(self._key_column_values)
 
-        if rev_table.need_transfer_pks:
-            coroutines = [
-                self._collect_revert_table_ids(rev_table, fk_column, table)
-                for fk_column in rev_table.get_columns_by_constraint_table_name(
-                    table.name,
-                    constraint_types_for_importing,
-                )
-            ]
+        key_table.is_ready_for_transferring = True
 
-            if coroutines:
-                await asyncio.wait(coroutines)
+        logger.info('preparing key table values finished!')
 
-        table.revert_fk_tables[rev_table_name] = True
+    async def collect(self):
+        await self._prepare_key_table_values()
 
-    async def _collect_importing_fk_tables_records_ids(
-        self,
-        table: DBTable,
-    ):
-        logger.info(
-            f"start collecting records ids of table \"{table.name}\""
-        )
-        # обход таблиц связанных через внешние ключи
-        where_conditions_columns = {}
 
-        if table.fks_with_key_column:
-            fk_columns = table.fks_with_key_column
-            logger.debug(
-                f"table with fks_with_ent_id - "
-                f"{make_str_from_iterable(table.fks_with_key_column)}"
-            )
-        else:
-            fk_columns = table.not_self_fk_columns
-            logger.debug(
-                f"table without fks_with_ent_id - {table.not_self_fk_columns}"
-            )
-
-        unique_fks_columns = table.unique_foreign_keys_columns
-        if unique_fks_columns:
-            fk_columns = unique_fks_columns
-
-        with_full_transferred_table = False
-
-        for fk_column in fk_columns:
-            logger.debug(f"prepare column {fk_column.name}")
-            fk_table = self._dst_database.tables[
-                fk_column.constraint_table.name
-            ]
-
-            if fk_table.need_transfer_pks:
-                if not fk_table.is_full_prepared:
-                    where_conditions_columns[fk_column.name] = fk_table.need_transfer_pks
-                else:
-                    with_full_transferred_table = True
-
-        if not fk_columns and table.is_checked:
-            return
-
-        if (
-            fk_columns and
-            not where_conditions_columns and
-            not with_full_transferred_table
-        ):
-            return
-
-        foreign_table_pks = await self._get_table_column_values(
-            table=table,
-            column=table.primary_key,
-            where_conditions_columns=where_conditions_columns,
-        )
-
-        if (
-            fk_columns and
-            where_conditions_columns and
-            not foreign_table_pks
-        ):
-            return
-
-        table.need_transfer_pks.update(foreign_table_pks)
-
-        logger.debug(
-            f'table "{table.name}" need transfer pks - {len(table.need_transfer_pks)}'
-        )
-
-        del foreign_table_pks
-
-        # обход таблиц ссылающихся на текущую таблицу
-        logger.debug("prepare revert tables")
-
-        rev_coroutines = [
-            self._collect_importing_revert_tables_data(rev_table_name, table)
-            for rev_table_name, is_ready_for_transferring in table.revert_fk_tables.items()
-        ]
-
-        if rev_coroutines:
-            await asyncio.wait(rev_coroutines)
-
-        if not table.need_transfer_pks:
-            all_records = await self._get_table_column_values(
-                table=table,
-                column=table.primary_key,
-            )
-
-            table.need_transfer_pks.update(all_records)
-
-            del all_records
-
-        table.is_ready_for_transferring = True
-
-        logger.info(
-            f"finished collecting records ids of table \"{table.name}\""
-        )
+class TablesWithKeyColumnSiblingsCollector(BaseCollector):
+    """
+    Collector of records of tables with key columns and their siblings
+    """
 
     async def _recursively_preparing_foreign_table_chunk(
         self,
@@ -565,6 +364,186 @@ class Collector(BaseCollector):
             f'finished preparing table with key column "{table.name}"'
         )
 
+    async def collect(self):
+        logger.info(
+            'start preparing tables with key column and their siblings..'
+        )
+        coroutines = [
+            self._prepare_tables_with_key_column(table)
+            for table in self._dst_database.tables_with_key_column
+        ]
+
+        if coroutines:
+            await asyncio.wait(coroutines)
+
+        logger.info(
+            'finished preparing tables with key column and their siblings..'
+        )
+
+
+class Collector(BaseCollector):
+    """
+    Класс комплексной транспортировки, который использует принципы обхода по
+    внешним ключам и по таблицам с обратной связью
+    """
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            *args,
+            **kwargs,
+        )
+        # словарь с названиями таблиц и идентификаторами импортированных записей
+        self._transfer_progress_dict = {}
+        self.filling_tables = set()
+
+        self.content_type_table = {}
+
+    async def _collect_revert_table_ids(self, rev_table, fk_column, table):
+        rev_table_pk_ids = (
+            list(rev_table.need_transfer_pks)
+            if not rev_table.is_full_prepared
+            else []
+        )
+
+        rev_ids = await self._get_table_column_values(
+            table=rev_table,
+            column=fk_column,
+            primary_key_values=rev_table_pk_ids,
+            is_revert=True,
+        )
+
+        if rev_ids:
+            table.need_transfer_pks.update(rev_ids)
+
+        del rev_ids
+
+    async def _collect_importing_revert_tables_data(
+        self, rev_table_name, table
+    ):
+        constraint_types_for_importing = [ConstraintTypesEnum.FOREIGN_KEY]
+        rev_table = self._dst_database.tables[rev_table_name]
+        logger.info(f"prepare revert table {rev_table_name}")
+
+        if rev_table.fks_with_key_column and not table.with_key_column:
+            return
+
+        if rev_table.need_transfer_pks:
+            coroutines = [
+                self._collect_revert_table_ids(rev_table, fk_column, table)
+                for fk_column in rev_table.get_columns_by_constraint_table_name(
+                    table.name,
+                    constraint_types_for_importing,
+                )
+            ]
+
+            if coroutines:
+                await asyncio.wait(coroutines)
+
+        table.revert_fk_tables[rev_table_name] = True
+
+    async def _collect_importing_fk_tables_records_ids(
+        self,
+        table: DBTable,
+    ):
+        logger.info(
+            f"start collecting records ids of table \"{table.name}\""
+        )
+        # обход таблиц связанных через внешние ключи
+        where_conditions_columns = {}
+
+        if table.fks_with_key_column:
+            fk_columns = table.fks_with_key_column
+            logger.debug(
+                f"table with fks_with_ent_id - "
+                f"{make_str_from_iterable(table.fks_with_key_column)}"
+            )
+        else:
+            fk_columns = table.not_self_fk_columns
+            logger.debug(
+                f"table without fks_with_ent_id - {table.not_self_fk_columns}"
+            )
+
+        unique_fks_columns = table.unique_foreign_keys_columns
+        if unique_fks_columns:
+            fk_columns = unique_fks_columns
+
+        with_full_transferred_table = False
+
+        for fk_column in fk_columns:
+            logger.debug(f"prepare column {fk_column.name}")
+            fk_table = self._dst_database.tables[
+                fk_column.constraint_table.name
+            ]
+
+            if fk_table.need_transfer_pks:
+                if not fk_table.is_full_prepared:
+                    where_conditions_columns[fk_column.name] = fk_table.need_transfer_pks
+                else:
+                    with_full_transferred_table = True
+
+        # TODO Uncomment after refactoring
+        # if not fk_columns and table.is_checked:
+        #     return
+
+        if (
+            fk_columns and
+            not where_conditions_columns and
+            not with_full_transferred_table
+        ):
+            return
+
+        foreign_table_pks = await self._get_table_column_values(
+            table=table,
+            column=table.primary_key,
+            where_conditions_columns=where_conditions_columns,
+        )
+
+        if (
+            fk_columns and
+            where_conditions_columns and
+            not foreign_table_pks
+        ):
+            return
+
+        table.need_transfer_pks.update(foreign_table_pks)
+
+        logger.debug(
+            f'table "{table.name}" need transfer pks - {len(table.need_transfer_pks)}'
+        )
+
+        del foreign_table_pks
+
+        # обход таблиц ссылающихся на текущую таблицу
+        logger.debug("prepare revert tables")
+
+        rev_coroutines = [
+            self._collect_importing_revert_tables_data(rev_table_name, table)
+            for rev_table_name, is_ready_for_transferring in table.revert_fk_tables.items()
+        ]
+
+        if rev_coroutines:
+            await asyncio.wait(rev_coroutines)
+
+        if not table.need_transfer_pks:
+            all_records = await self._get_table_column_values(
+                table=table,
+                column=table.primary_key,
+            )
+
+            table.need_transfer_pks.update(all_records)
+
+            del all_records
+
+        table.is_ready_for_transferring = True
+
+        logger.info(
+            f"finished collecting records ids of table \"{table.name}\""
+        )
+
     async def _prepare_common_tables(self):
         """
         Метод сбора данных для дальнейшего импорта в целевую базу. Первоначально
@@ -576,15 +555,6 @@ class Collector(BaseCollector):
         key_column.
         """
         logger.info("start preparing common tables for transferring")
-
-        # preparing tables with key table and siblings for transferring
-        coroutines = [
-            self._prepare_tables_with_key_column(table)
-            for table in self._dst_database.tables_with_key_column
-        ]
-
-        if coroutines:
-            await asyncio.wait(coroutines)
 
         not_transferred_tables = list(
             filter(
@@ -757,12 +727,6 @@ class Collector(BaseCollector):
         logger.info("finish collecting")
 
     async def collect(self):
-        with StatisticIndexer(
-            self._statistic_manager,
-            TransferringStagesEnum.TRANSFER_KEY_TABLE,
-        ):
-            await asyncio.wait([self._collect_key_table_values()])
-
         with StatisticIndexer(
             self._statistic_manager,
             TransferringStagesEnum.COLLECT_COMMON_TABLES_RECORDS_IDS

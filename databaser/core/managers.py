@@ -5,6 +5,11 @@ from copy import (
 from datetime import (
     datetime,
 )
+from typing import (
+    List,
+    Set,
+    Type,
+)
 
 import asyncpg
 from asyncpg import (
@@ -13,7 +18,10 @@ from asyncpg import (
 
 import settings
 from core.collectors import (
+    BaseCollector,
     Collector,
+    KeyTableCollector,
+    TablesWithKeyColumnSiblingsCollector,
 )
 from core.db_entities import (
     DBTable,
@@ -273,14 +281,13 @@ class DatabaserManager:
                 ):
                     await self._set_tables_counters()
 
-                collector = Collector(
+                collector_manager = CollectorManager(
                     src_database=self._src_database,
                     dst_database=self._dst_database,
                     statistic_manager=self._statistic_manager,
                     key_column_values=self._key_column_values,
                 )
-
-                await collector.collect()
+                await asyncio.wait([collector_manager.manage()])
 
                 transporter = Transporter(
                     dst_database=self._dst_database,
@@ -307,7 +314,7 @@ class DatabaserManager:
                         dst_database=self._dst_database,
                         src_database=self._src_database,
                         statistic_manager=self._statistic_manager,
-                        key_column_values=collector._key_column_values,
+                        key_column_values=self._key_column_values,
                     )
 
                     await validator_manager.validate()
@@ -326,3 +333,34 @@ class DatabaserManager:
             f'dates start - {start}, finish - {finish}, spend time - '
             f'{finish - start}'
         )
+
+
+class CollectorManager:
+    collectors_classes: List[Type[BaseCollector]] = [
+        KeyTableCollector,
+        TablesWithKeyColumnSiblingsCollector,
+        Collector,
+    ]
+
+    def __init__(
+        self,
+        src_database: SrcDatabase,
+        dst_database: DstDatabase,
+        statistic_manager: StatisticManager,
+        key_column_values: Set[int],
+    ):
+        self._dst_database = dst_database
+        self._src_database = src_database
+        self._key_column_values = key_column_values
+        self._statistic_manager = statistic_manager
+
+    async def manage(self):
+        for collector_class in self.collectors_classes:
+            collector = collector_class(
+                src_database=self._src_database,
+                dst_database=self._dst_database,
+                statistic_manager=self._statistic_manager,
+                key_column_values=self._key_column_values,
+            )
+
+            await collector.collect()
