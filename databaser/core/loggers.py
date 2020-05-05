@@ -24,9 +24,11 @@ from core.helpers import (
 
 
 class StatisticManager:
-    def __init__(self, db, logger):
-        self._db: DstDatabase = db
-        self._logger = logger
+    def __init__(
+        self,
+        database: DstDatabase,
+    ):
+        self._database = database
 
         self._time_indications = defaultdict(list)
         self._memory_usage_indications = defaultdict(list)
@@ -68,9 +70,9 @@ class StatisticManager:
         """
         Output transferred tables rows count
         """
-        tables: Iterable[DBTable] = self._db.tables.values()
+        tables: Iterable[DBTable] = self._database.tables.values()
         tables_counts = {
-            table.name: (len(table.transferred_ids), len(table.need_imported))
+            table.name: (len(table.transferred_pks), len(table.need_transfer_pks))
             for table in tables
         }
 

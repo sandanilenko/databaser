@@ -1,7 +1,11 @@
 import asyncio
+from typing import (
+    Set,
+)
 
 from asyncpg import (
     NotNullViolationError,
+    PostgresError,
     PostgresSyntaxError,
     UndefinedColumnError,
 )
@@ -41,16 +45,12 @@ class Transporter:
         self,
         dst_database: DstDatabase,
         src_database: SrcDatabase,
-        dst_pool: Pool,
-        src_pool: Pool,
         statistic_manager: StatisticManager,
-        key_column_ids=(),
+        key_column_values: Set[int],
     ):
         self._dst_database = dst_database
         self._src_database = src_database
-        self._dst_pool = dst_pool
-        self._src_pool = src_pool
-        self.key_column_ids = key_column_ids
+        self.key_column_ids = key_column_values
         self._structured_ent_ids = None
         # словарь с названиями таблиц и идентификаторами импортированных записей
         self._transfer_progress_dict = {}
@@ -65,11 +65,11 @@ class Transporter:
         """
         logger.info(
             f"start transferring table \"{table.name}\", "
-            f"need to import - {len(table.need_imported)}"
+            f"need to import - {len(table.need_transfer_pks)}"
         )
 
         need_import_ids_chunks = make_chunks(
-            iterable=table.need_imported,
+            iterable=table.need_transfer_pks,
             size=self.CHUNK_SIZE,
         )
 
@@ -100,7 +100,7 @@ class Transporter:
         logger.debug(f"transfer chunk table data - {table.name}")
 
         transferred_ids = None
-        async with self._dst_pool.acquire() as connection:
+        async with self._dst_database.connection_pool.acquire() as connection:
             try:
                 transferred_ids = await connection.fetch(transfer_sql)
             except (
@@ -108,17 +108,15 @@ class Transporter:
                 NotNullViolationError,
                 PostgresSyntaxError,
             ) as e:
-                logger.warning(
-                    f"{str(e)}, table - {table.name}, "
-                    f"sql - {transfer_sql} --- _transfer_chunk_table_data"
+                raise PostgresError(
+                    f'{str(e)}, table - {table.name}, '
+                    f'sql - {transfer_sql} --- _transfer_chunk_table_data'
                 )
-                raise type(e)
 
         if transferred_ids:
             transferred_ids = [tr[0] for tr in transferred_ids]
-            table.transferred_ids.update(transferred_ids)
+            table.transferred_pks.update(transferred_ids)
 
-        # del need_import_ids_chunk[:]
         del transfer_sql
 
     async def _transfer_collecting_data(self):
@@ -128,7 +126,7 @@ class Transporter:
         logger.info("start transferring data to target db...")
 
         need_imported_tables = filter(
-            lambda table: table.need_imported,
+            lambda table: table.need_transfer_pks,
             self._dst_database.tables.values(),
         )
 
@@ -147,7 +145,7 @@ class Transporter:
         Обновление значений счетчиков на макситальные
         """
         logger.info("start updating sequences...")
-        await self._dst_database.set_max_tables_sequences(self._dst_pool)
+        await self._dst_database.set_max_tables_sequences()
         logger.info("finished updating sequences!")
 
     async def transfer(self):
