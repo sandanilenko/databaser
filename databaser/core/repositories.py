@@ -377,7 +377,7 @@ class SQLRepository:
                 if c_name in settings.KEY_COLUMN_NAMES:
                     continue
 
-                column = await table.get_column_by_name(c_name)
+                condition_column = await table.get_column_by_name(c_name)
 
                 if c_ids:
                     if is_revert:
@@ -396,7 +396,7 @@ class SQLRepository:
                     tmp_where_conditions = []
                     for ids_chunk in ids_chunks:
                         ids_str = cls._get_ids_str_by_column_type(
-                            column=column,
+                            column=condition_column,
                             ids=ids_chunk,
                         )
 
