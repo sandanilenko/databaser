@@ -9,7 +9,7 @@ from itertools import (
     islice,
 )
 from typing import (
-    Iterable,
+    Iterable, Tuple, Union,
 )
 
 logger = logging.getLogger('asyncio')
@@ -67,7 +67,9 @@ def dates_list_to_str(dates_list, format_='%Y-%m-%d %H:%M:%S'):
 Results = namedtuple('Results', ['sorted', 'cyclic'])
 
 
-def topological_sort(dependency_pairs):
+def topological_sort(
+    dependency_pairs: Iterable[Union[str, Tuple[str, str]]],
+):
     """
     Sort values subject to dependency constraints
 
