@@ -42,7 +42,7 @@ from core.repositories import (
 
 
 class BaseCollector(metaclass=ABCMeta):
-    CHUNK_SIZE = 70000
+    CHUNK_SIZE = 60000
 
     def __init__(
         self,
@@ -315,7 +315,7 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
         await self._recursively_preparing_table(
             table=table,
             need_transfer_pks=need_transfer_pks_chunk,
-            deep_without_key_table=1,
+            deep_without_key_table=10,
         )
 
         del need_transfer_pks_chunk[:]
@@ -499,9 +499,8 @@ class SortedByDependencyTablesCollector(BaseCollector):
                 else:
                     with_full_transferred_table = True
 
-        # TODO Uncomment after refactoring
-        # if not fk_columns and table.is_checked:
-        #     return
+        if not fk_columns and table.is_checked:
+            return
 
         if (
             fk_columns and
