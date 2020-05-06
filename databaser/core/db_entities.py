@@ -530,19 +530,22 @@ class DBTable(object):
         """
         return self.columns.get(column_name)
 
-    def get_columns_by_constraint_table_name(
+    def get_columns_by_constraint_types_table_name(
         self,
-        table_name,
-        constraint_type=None,
+        table_name: str,
+        constraint_types: Optional[Iterable[str]] = None,
     ):
+        """
+        Get foreign columns by constraint types and table name
+        """
         return list(
             filter(
                 lambda c: (
                     deep_getattr(c.constraint_table, 'name') == table_name and (
                         set(c.constraint_type).intersection(
-                            set(constraint_type)
+                            set(constraint_types)
                         ) if
-                        constraint_type else
+                        constraint_types else
                         True
                     )
                 ),
