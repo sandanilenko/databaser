@@ -277,24 +277,39 @@ class DstDatabase(BaseDatabase):
         """
         Truncating tables
         """
-        logger.info('start truncating tables..')
+        if settings.IS_TRUNCATE_TABLES:
+            logger.info('start truncating tables..')
 
-        tables_names = filter(
-            lambda item: (
-                item not in settings.TRUNCATE_EXCLUDED_TABLES and
-                item not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
-            ),
-            self.table_names,
-        )
+            if settings.TABLES_TRUNCATE_INCLUDED:
+                table_names = settings.TABLES_TRUNCATE_INCLUDED
+            else:
+                table_names = tuple(
+                    filter(
+                        lambda table_name: (
+                            table_name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+                        ),
+                        self.table_names,
+                    )
+                )
 
-        truncate_table_queries = SQLRepository.get_truncate_table_queries(
-            table_names=tables_names,
-        )
+            if settings.TABLES_TRUNCATE_EXCLUDED:
+                table_names = tuple(
+                    filter(
+                        lambda table_name: (
+                            table_name not in settings.TABLES_TRUNCATE_EXCLUDED
+                        ),
+                        table_names,
+                    )
+                )
 
-        for query in truncate_table_queries:
-            await self.execute_raw_sql(query)
+            truncate_table_queries = SQLRepository.get_truncate_table_queries(
+                table_names=table_names,
+            )
 
-        logger.info('truncating tables finished.')
+            for query in truncate_table_queries:
+                await self.execute_raw_sql(query)
+
+            logger.info('truncating tables finished.')
 
     async def disable_triggers(self):
         """

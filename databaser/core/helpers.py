@@ -1,15 +1,21 @@
 import logging
 import operator
+import os
 from collections import (
     defaultdict,
     namedtuple,
+)
+from distutils.util import (
+    strtobool,
 )
 from itertools import (
     chain,
     islice,
 )
 from typing import (
-    Iterable, Tuple, Union,
+    Iterable,
+    Tuple,
+    Union,
 )
 
 logger = logging.getLogger('asyncio')
@@ -135,3 +141,59 @@ def deep_getattr(obj, attr, default=None):
         value = default
 
     return value
+
+
+def get_str_environ_parameter(
+    name: str,
+    default: str = '',
+) -> str:
+    """
+    Getting string environment variable
+    """
+    return os.environ.get(name, default).strip()
+
+
+def get_int_environ_parameter(
+    name: str,
+    default: int = 0,
+) -> int:
+    """
+    Getting integer environment variable
+    """
+    return int(os.environ.get(name, default))
+
+
+def get_bool_environ_parameter(
+    name: str,
+    default: bool = False,
+) -> bool:
+    """
+    Getting boolean environment variable
+    """
+    parameter_value = os.environ.get(name)
+
+    if parameter_value:
+        parameter_value = bool(strtobool(parameter_value))
+    else:
+        parameter_value = default
+
+    return parameter_value
+
+
+def get_iterable_environ_parameter(
+    name: str,
+    separator: str = ',',
+    type_=str,
+) -> Tuple[str]:
+    """
+    Getting iterable environment variable as tuple
+    """
+    return tuple(
+        map(
+            type_,
+            filter(
+                None,
+                os.environ.get(name, '').replace(' ', '').split(separator)  # noqa
+            )
+        )
+    )
