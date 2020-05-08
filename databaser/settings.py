@@ -78,7 +78,7 @@ KEY_COLUMN_VALUES = get_iterable_environ_parameter(
     name='DATABASER_KEY_COLUMN_VALUES',
     type_=int,
 )
-KEY_TABLE_HIERARCHY_COLUMN_NAME = get_iterable_environ_parameter(
+KEY_TABLE_HIERARCHY_COLUMN_NAME = get_str_environ_parameter(
     name='DATABASER_KEY_TABLE_HIERARCHY_COLUMN_NAME',
 )
 
