@@ -468,14 +468,23 @@ class SortedByDependencyTablesCollector(BaseCollector):
         # обход таблиц связанных через внешние ключи
         where_conditions_columns = {}
 
-        if table.unique_foreign_keys_columns:
-            fk_columns = table.unique_foreign_keys_columns
-        elif table.fks_with_key_column:
+        if table.fks_with_key_column:
             fk_columns = table.fks_with_key_column
+
+            if table.unique_foreign_keys_columns:
+                unique_foreign_keys_with_key_columns = set(
+                    table.unique_foreign_keys_columns
+                ).intersection(fk_columns)
+
+                if unique_foreign_keys_with_key_columns:
+                    fk_columns = unique_foreign_keys_with_key_columns
+
             logger.debug(
                 f'table with fks with key column - '
                 f'{make_str_from_iterable(table.fks_with_key_column)}'
             )
+        elif table.unique_foreign_keys_columns:
+            fk_columns = table.unique_foreign_keys_columns
         else:
             fk_columns = table.not_self_fk_columns
             logger.debug(
