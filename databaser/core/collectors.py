@@ -160,44 +160,17 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
     Collector of records of tables with key columns and their siblings
     """
 
-    async def _recursively_preparing_foreign_table_chunk(
-        self,
-        foreign_table: DBTable,
-        foreign_table_pks_chunk: List[int],
-        stack_tables: Tuple[str],
-        deep_without_key_table: int,
-    ):
-        """
-        Recursively preparing foreign table chunk
-        """
-        dwkt = (
-            deep_without_key_table - 1 if
-            not foreign_table.with_key_column else
-            deep_without_key_table
-        )
-
-        await self._recursively_preparing_table(
-            table=foreign_table,
-            need_transfer_pks=foreign_table_pks_chunk,
-            stack_tables=stack_tables,
-            deep_without_key_table=dwkt,
-        )
-
-        del dwkt
-        del foreign_table_pks_chunk[:]
-
-    async def _recursively_preparing_foreign_table(
+    async def _direct_recursively_preparing_foreign_table(
         self,
         table: DBTable,
         column: DBColumn,
         need_transfer_pks: Iterable[int],
         stack_tables: Tuple[str],
-        deep_without_key_table: int,
     ):
         """
         Recursively preparing foreign table
         """
-        foreign_table = self._dst_database.tables[column.constraint_table.name]
+        foreign_table = column.constraint_table
         foreign_table.is_checked = True
 
         # если таблица уже есть в стеке импорта таблиц, то он нас не
@@ -256,11 +229,10 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
                 )
 
                 coroutines = [
-                    self._recursively_preparing_foreign_table_chunk(
-                        foreign_table=foreign_table,
-                        foreign_table_pks_chunk=foreign_table_pks_difference_chunk,  # noqa
+                    self._direct_recursively_preparing_table(
+                        table=foreign_table,
+                        need_transfer_pks=foreign_table_pks_difference_chunk,
                         stack_tables=stack_tables,
-                        deep_without_key_table=deep_without_key_table,
                     )
                     for foreign_table_pks_difference_chunk in foreign_table_pks_difference_chunks  # noqa
                 ]
@@ -272,53 +244,31 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
 
         del foreign_table_pks
 
-    async def _recursively_preparing_table(
+    async def _direct_recursively_preparing_table(
         self,
         table: DBTable,
         need_transfer_pks: List[int],
         stack_tables=(),
-        deep_without_key_table=None,
     ):
         """
         Recursively preparing table
         """
-        if not deep_without_key_table:
-            logger.debug("Max deep without key table")
-            return
-
         stack_tables += (table,)
 
         logger.debug(make_str_from_iterable([t.name for t in stack_tables]))
 
         coroutines = [
-            self._recursively_preparing_foreign_table(
+            self._direct_recursively_preparing_foreign_table(
                 table=table,
                 column=column,
                 need_transfer_pks=need_transfer_pks,
                 stack_tables=stack_tables,
-                deep_without_key_table=deep_without_key_table,
             )
             for column in table.not_self_fk_columns
         ]
 
         if coroutines:
             await asyncio.wait(coroutines)
-
-    async def _recursively_preparing_table_with_key_column(
-        self,
-        table: DBTable,
-        need_transfer_pks_chunk: List[int],
-    ):
-        """
-        Recursively preparing table with key column
-        """
-        await self._recursively_preparing_table(
-            table=table,
-            need_transfer_pks=need_transfer_pks_chunk,
-            deep_without_key_table=10,
-        )
-
-        del need_transfer_pks_chunk[:]
 
     async def _prepare_tables_with_key_column(
         self,
@@ -348,9 +298,9 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
             )
 
             coroutines = [
-                self._recursively_preparing_table_with_key_column(
+                self._direct_recursively_preparing_table(
                     table=table,
-                    need_transfer_pks_chunk=need_transfer_pks_chunk,
+                    need_transfer_pks=need_transfer_pks_chunk,
                 )
                 for need_transfer_pks_chunk in need_transfer_pks_chunks
             ]
