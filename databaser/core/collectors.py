@@ -338,9 +338,9 @@ class SortedByDependencyTablesCollector(BaseCollector):
 
     async def _get_revert_table_column_values(
         self,
-        revert_table: DBTable,
-        foreign_column: DBColumn,
         table: DBTable,
+        revert_table: DBTable,
+        revert_column: DBColumn,
     ):
         """
         Get revert table column values
@@ -353,7 +353,7 @@ class SortedByDependencyTablesCollector(BaseCollector):
 
         revert_table_column_values = await self._get_table_column_values(
             table=revert_table,
-            column=foreign_column,
+            column=revert_column,
             primary_key_values=revert_table_pks,
             is_revert=True,
         )
@@ -365,19 +365,14 @@ class SortedByDependencyTablesCollector(BaseCollector):
 
     async def _prepare_revert_table(
         self,
-        revert_table_name: str,
         table: DBTable,
+        revert_table: DBTable,
+        revert_columns: Set[DBColumn],
     ):
         """
         Preparing revert table
         """
-        constraint_types_for_importing = [
-            ConstraintTypesEnum.FOREIGN_KEY,
-        ]
-
-        revert_table = self._dst_database.tables[revert_table_name]
-
-        logger.info(f'prepare revert table {revert_table_name}')
+        logger.info(f'prepare revert table {revert_table.name}')
 
         if (
             revert_table.fks_with_key_column and
@@ -386,24 +381,18 @@ class SortedByDependencyTablesCollector(BaseCollector):
             return
 
         if revert_table.need_transfer_pks:
-            foreign_columns = revert_table.get_columns_by_constraint_types_table_name(  # noqa
-                table_name=table.name,
-                constraint_types=constraint_types_for_importing,
-            )
 
             coroutines = [
                 self._get_revert_table_column_values(
-                    revert_table=revert_table,
-                    foreign_column=foreign_column,
                     table=table,
+                    revert_table=revert_table,
+                    revert_column=revert_column,
                 )
-                for foreign_column in foreign_columns
+                for revert_column in revert_columns
             ]
 
             if coroutines:
                 await asyncio.wait(coroutines)
-
-        table.revert_fk_tables[revert_table_name] = True
 
     async def _prepare_unready_table(
         self,
@@ -495,10 +484,11 @@ class SortedByDependencyTablesCollector(BaseCollector):
 
         coroutines = [
             self._prepare_revert_table(
-                revert_table_name=revert_table_name,
                 table=table,
+                revert_table=revert_table,
+                revert_columns=revert_columns,
             )
-            for revert_table_name, is_ready_for_transferring in table.revert_fk_tables.items()  # noqa
+            for revert_table, revert_columns in table.revert_foreign_tables.items()  # noqa
         ]
 
         if coroutines:

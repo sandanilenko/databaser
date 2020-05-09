@@ -1,4 +1,7 @@
 import asyncio
+from collections import (
+    defaultdict,
+)
 from functools import (
     lru_cache,
 )
@@ -7,6 +10,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Set,
 )
 
 import asyncpg
@@ -346,7 +350,7 @@ class DBTable(object):
         '_is_ready_for_transferring',
         '_is_checked',
         '_key_column',
-        'revert_fk_tables',
+        'revert_foreign_tables',
         'need_transfer_pks',
         'transferred_pks',
     )
@@ -371,9 +375,11 @@ class DBTable(object):
 
         self._key_column = None
 
-        # хранит названия таблиц которые ссылаются на текущую и признак того,
-        # что записи зависимой таблицы были внесены в список для импорта
-        self.revert_fk_tables = {}
+        # Dict of revert tables view as revert table as key and set of db
+        # columns as values
+        self.revert_foreign_tables: Dict[DBTable, Set[DBColumn]] = (
+            defaultdict(set)
+        )
 
         # Pks of table for transferring
         self.need_transfer_pks = set()
@@ -387,10 +393,11 @@ class DBTable(object):
             f'with_self_fk {self.with_self_fk}'
         )
 
-    @property
-    @lru_cache()
-    def rev_fk_tables_records_transferred(self):
-        return all([t for t in self.revert_fk_tables.values()])
+    def __eq__(self, other):
+        return self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
 
     @property
     @lru_cache()
@@ -535,7 +542,7 @@ class DBTable(object):
             self._key_column = column
 
         if column.is_foreign_key:
-            column.constraint_table.revert_fk_tables[self.name] = False
+            column.constraint_table.revert_foreign_tables[self].add(column)
 
         return column
 
@@ -549,7 +556,7 @@ class DBTable(object):
         self,
         table_name: str,
         constraint_types: Optional[Iterable[str]] = None,
-    ):
+    ) -> List['DBColumn']:
         """
         Get foreign columns by constraint types and table name
         """
