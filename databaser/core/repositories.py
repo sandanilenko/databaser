@@ -563,6 +563,8 @@ class SQLRepository:
             ),
         )
 
+        logger.debug(result_sql)
+
         del where_conditions_filtering[:]
         del where_conditions_str
 

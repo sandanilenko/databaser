@@ -11,6 +11,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Union,
 )
 
 import asyncpg
@@ -122,6 +123,18 @@ class BaseDatabase(object):
 
         return result
 
+    def clear_cache(self):
+        """
+        Clear lru cache
+        """
+        DBTable.foreign_keys_columns.fget.cache_clear()
+        DBTable.self_fk_columns.fget.cache_clear()
+        DBTable.not_self_fk_columns.fget.cache_clear()
+        DBTable.fk_columns_with_key_column.fget.cache_clear()
+        DBTable.unique_fk_columns_with_key_column.fget.cache_clear()
+        DBTable.fk_columns_tables_with_fk_columns_with_key_column.fget.cache_clear()
+        DBTable.unique_fk_columns_tables_with_fk_columns_with_key_column.fget.cache_clear()
+        DBTable.highest_priority_fk_columns.fget.cache_clear()
 
 class SrcDatabase(BaseDatabase):
     """
@@ -223,6 +236,8 @@ class DstDatabase(BaseDatabase):
         if coroutines:
             await asyncio.gather(*coroutines)
 
+        self.clear_cache()
+
     async def prepare_tables(self):
         """
         Prepare tables structure for transferring data process
@@ -239,6 +254,7 @@ class DstDatabase(BaseDatabase):
         chunks_table_names = make_chunks(
             iterable=self.table_names,
             size=settings.TABLES_LIMIT_PER_TRANSACTION,
+            is_list=True,
         )
 
         coroutines = [
@@ -386,12 +402,17 @@ class DBTable(object):
 
         self.transferred_pks = set()
 
-    def __str__(self):
+    def __repr__(self):
         return (
-            f'table {self.name} with_fk {self.with_fk}, '
-            f'with_key_column {self.with_key_column}, '
-            f'with_self_fk {self.with_self_fk}'
+            f'<{self.__class__.__name__} @name="{self.name}" '
+            f'@with_fk="{self.with_fk}" '
+            f'@with_key_column="{self.with_key_column}" '
+            f'@with_self_fk="{self.with_self_fk}" '
+            f'@need_transfer_pks_count="{len(self.need_transfer_pks)}" >'
         )
+
+    def __str__(self):
+        return self.__repr__()
 
     def __eq__(self, other):
         return self.name == other.name
@@ -462,7 +483,7 @@ class DBTable(object):
 
     @property
     @lru_cache()
-    def unique_foreign_keys_columns(self) -> List['DBColumn']:
+    def unique_fk_columns(self) -> List['DBColumn']:
         return list(filter(
             lambda c: c.is_foreign_key and c.is_unique,
             self.not_self_fk_columns
@@ -490,7 +511,7 @@ class DBTable(object):
 
     @property
     @lru_cache()
-    def fks_with_key_column(self):
+    def fk_columns_with_key_column(self) -> List['DBColumn']:
         return list(
             filter(
                 lambda c: c.constraint_table.with_key_column,
@@ -499,12 +520,88 @@ class DBTable(object):
         )
 
     @property
+    @lru_cache()
+    def unique_fk_columns_with_key_column(self) -> List['DBColumn']:
+        """
+        Return unique foreign key columns to tables with key column
+        """
+        return list(
+            set(
+                self.unique_fk_columns
+            ).intersection(self.fk_columns_with_key_column)
+        )
+
+    @property
+    @lru_cache
+    def fk_columns_tables_with_fk_columns_with_key_column(self) ->List['DBColumn']:
+        """
+        Return a list of foreign key columns to tables with foreign key
+        columns to table with key columns
+        """
+        columns = []
+
+        for column in self.not_self_fk_columns:
+            constraint_table_fk_columns = column.constraint_table.not_self_fk_columns
+
+            for constraint_column in constraint_table_fk_columns:
+                if constraint_column.constraint_table.with_key_column:
+                    columns.append(column)
+
+        return columns
+
+    @property
+    @lru_cache
+    def unique_fk_columns_tables_with_fk_columns_with_key_column(self) -> List['DBColumn']:
+        """
+        Return a list of unique foreign key columns to tables with foreign key
+        columns to table with key columns
+        """
+        columns = []
+
+        for column in self.unique_fk_columns:
+            constraint_table_fk_columns = column.constraint_table.not_self_fk_columns  # noqa
+
+            for constraint_column in constraint_table_fk_columns:
+                if constraint_column.constraint_table.with_key_column:
+                    columns.append(column)
+
+        return columns
+
+    @property
     def is_checked(self) -> bool:
         return self._is_checked
 
     @is_checked.setter
     def is_checked(self, value):
         self._is_checked = value
+
+    @property
+    @lru_cache()
+    def highest_priority_fk_columns(self) -> List['DBColumn']:
+        """
+        Return highest priority foreign key columns
+        """
+        if self.unique_fk_columns_with_key_column:
+            fk_columns = self.unique_fk_columns_with_key_column
+        elif self.unique_fk_columns_tables_with_fk_columns_with_key_column:
+            fk_columns = self.unique_fk_columns_tables_with_fk_columns_with_key_column  # noqa
+        elif self.fk_columns_with_key_column:
+            fk_columns = self.fk_columns_with_key_column
+        elif self.fk_columns_tables_with_fk_columns_with_key_column:
+            fk_columns = self.fk_columns_tables_with_fk_columns_with_key_column
+        else:
+            fk_columns = self.not_self_fk_columns
+
+        return fk_columns
+
+    def update_need_transfer_pks(
+        self,
+        need_transfer_pks: Iterable[Union[int, str]],
+    ):
+        """
+        Updating table need transfer pks
+        """
+        self.need_transfer_pks.update(need_transfer_pks)
 
     async def append_column(
         self,
@@ -522,6 +619,7 @@ class DBTable(object):
 
                 if constraint_type == ConstraintTypesEnum.FOREIGN_KEY:
                     column.constraint_table = constraint_table
+                    DBColumn.is_foreign_key.fget.cache_clear()
         else:
             # postgresql возврщает тип array вместо integer array
             if data_type == 'ARRAY':
@@ -658,9 +756,12 @@ class DBColumn(object):
 
     def __repr__(self):
         return (
-            f'{self.name} - {self.data_type} - {self.ordinal_position} - '
-            f'{deep_getattr(self.constraint_table, "name", " - ")}'
-            f'{make_str_from_iterable(self.constraint_type)}'
+            f'< {self.__class__.__name__} @name="{self.name}" '
+            f'@data_type="{self.data_type}" '
+            f'@ordinal_position="{self.ordinal_position}" '
+            f'@is_foreign_key="{self.is_foreign_key}" '
+            f'@foreign_table_name="{deep_getattr(self.constraint_table, "name", " - ")}" '
+            f'@constraint_types="{make_str_from_iterable(self.constraint_type)}">'
         )
     
     def __str__(self):
