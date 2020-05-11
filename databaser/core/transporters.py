@@ -1,6 +1,8 @@
 import asyncio
 from typing import (
+    List,
     Set,
+    Union,
 )
 
 from asyncpg import (
@@ -8,9 +10,6 @@ from asyncpg import (
     PostgresError,
     PostgresSyntaxError,
     UndefinedColumnError,
-)
-from asyncpg.pool import (
-    Pool,
 )
 
 from core.db_entities import (
@@ -86,7 +85,7 @@ class Transporter:
     async def _transfer_chunk_table_data(
         self,
         table: DBTable,
-        need_import_ids_chunk: list,
+        need_import_ids_chunk: List[Union[int, str]],
     ):
         """
         Порционный перенос данных таблицы в целевую БД
@@ -97,7 +96,7 @@ class Transporter:
             primary_key_ids=need_import_ids_chunk,
         )
 
-        logger.debug(f"transfer chunk table data - {table.name}")
+        logger.info(f'transfer chunk table data - {table.name}')
 
         transferred_ids = None
         async with self._dst_database.connection_pool.acquire() as connection:
