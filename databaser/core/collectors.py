@@ -410,6 +410,8 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
                 await asyncio.wait(coroutines)
 
             if revert_table.need_transfer_pks:
+                stack_tables_copy = copy(stack_tables)
+
                 await self._revert_recursively_preparing_table(
                     table=revert_table,
                     stack_tables=stack_tables,
@@ -418,7 +420,7 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
                 await self._direct_recursively_preparing_table(
                     table=revert_table,
                     need_transfer_pks=revert_table.need_transfer_pks,
-                    stack_tables=copy(stack_tables),
+                    stack_tables=stack_tables_copy,
                 )
 
         del need_transfer_pks
