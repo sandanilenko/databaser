@@ -57,7 +57,7 @@ class SQLRepository:
     )
 
     DROP_TEMP_SRC_SCHEMA_SQL_TEMPLATE = (
-        'DROP SCHEMA IF EXISTS"tmp_src_schema" CASCADE;'
+        'DROP SCHEMA IF EXISTS "tmp_src_schema" CASCADE;'
     )
 
     IMPORT_FOREIGN_SCHEMA_SQL_TEMPLATE = (

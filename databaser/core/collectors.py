@@ -516,13 +516,9 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
         logger.info(
             'start preparing tables with key column and their siblings..'
         )
-        coroutines = [
-            self._prepare_tables_with_key_column(table)
-            for table in self._dst_database.tables_with_key_column
-        ]
 
-        if coroutines:
-            await asyncio.wait(coroutines)
+        for table in self._dst_database.tables_with_key_column:
+            await self._prepare_tables_with_key_column(table)
 
         for dst_table in self._dst_database.tables.values():
             if dst_table.is_checked:
