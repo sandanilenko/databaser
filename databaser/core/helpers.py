@@ -1,6 +1,7 @@
 import logging
 import operator
 import os
+import sys
 from collections import (
     defaultdict,
     namedtuple,
@@ -20,7 +21,9 @@ from typing import (
 
 logger = logging.getLogger('asyncio')
 
-sh = logging.StreamHandler()
+sh = logging.StreamHandler(
+    stream=sys.stdout,
+)
 
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
