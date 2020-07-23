@@ -345,7 +345,7 @@ class SQLRepository:
         Метод получения запроса получения идентификаторов таблицы с указанием
         условий
         """
-        if settings.LOG_LEVEL == LogLevelEnum.INFO:
+        if settings.LOG_LEVEL == LogLevelEnum.DEBUG:
             logger.debug(
                 f"SQL constraint ids. table name - {table.name}, "
                 f"column_name - {column.name}, "
@@ -578,7 +578,7 @@ class SQLRepository:
         """
         Возвращает перечисление идентификаторов в виде строки
         """
-        if column.data_type in ["integer"]:
+        if column.data_type in DataTypesEnum.NUMERAL:
             ids_str = ", ".join(
                 map(str, ids)
             )
