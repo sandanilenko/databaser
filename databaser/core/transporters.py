@@ -7,11 +7,11 @@ from typing import (
 
 from asyncpg import (
     NotNullViolationError,
+    NumericValueOutOfRangeError,
     PostgresError,
     PostgresSyntaxError,
     UndefinedColumnError,
 )
-
 from core.db_entities import (
     DBTable,
     DstDatabase,
@@ -106,6 +106,7 @@ class Transporter:
                 UndefinedColumnError,
                 NotNullViolationError,
                 PostgresSyntaxError,
+                NumericValueOutOfRangeError,
             ) as e:
                 raise PostgresError(
                     f'{str(e)}, table - {table.name}, '
