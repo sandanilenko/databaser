@@ -640,7 +640,14 @@ class DBTable(object):
             self._key_column = column
 
         if column.is_foreign_key:
-            column.constraint_table.revert_foreign_tables[self].add(column)
+            try:
+                column.constraint_table.revert_foreign_tables[self].add(column)
+            except AttributeError as e:
+                logger.error(
+                    f'Wrong foreign key column {column}'
+                )
+
+                raise e
 
         return column
 
@@ -757,6 +764,7 @@ class DBColumn(object):
     def __repr__(self):
         return (
             f'< {self.__class__.__name__} @name="{self.name}" '
+            f'@table_name="{self.table_name}" '
             f'@data_type="{self.data_type}" '
             f'@ordinal_position="{self.ordinal_position}" '
             f'@is_foreign_key="{self.is_foreign_key}" '
