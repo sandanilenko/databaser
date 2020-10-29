@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from collections import (
     defaultdict,
 )
@@ -642,12 +643,14 @@ class DBTable(object):
         if column.is_foreign_key:
             try:
                 column.constraint_table.revert_foreign_tables[self].add(column)
-            except AttributeError as e:
-                logger.error(
-                    f'Wrong foreign key column {column}'
+            except AttributeError:
+                traceback_ = "\n".join(traceback.format_stack())
+                message = (
+                    f'Wrong foreign key column {column}.\n'
+                    f'{traceback_}'
                 )
 
-                raise e
+                raise AttributeError(message)
 
         return column
 
