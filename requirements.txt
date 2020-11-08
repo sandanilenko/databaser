@@ -1,5 +1,4 @@
 psutil==5.7.2
-uvloop==0.14.0
 asyncpg==0.21.0
 async-lru==1.0.2
 prettytable==0.7.2
