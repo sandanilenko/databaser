@@ -156,10 +156,22 @@ class Transporter:
             self._statistic_manager,
             TransferringStagesEnum.TRANSFERRING_COLLECTED_DATA
         ):
-            await asyncio.wait([self._transfer_collecting_data()])
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        self._transfer_collecting_data()
+                    ),
+                ]
+            )
 
         with StatisticIndexer(
             self._statistic_manager,
             TransferringStagesEnum.UPDATE_SEQUENCES
         ):
-            await asyncio.wait([self._update_sequences()])
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        self._update_sequences()
+                    ),
+                ]
+            )

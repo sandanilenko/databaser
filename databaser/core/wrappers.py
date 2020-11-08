@@ -51,11 +51,41 @@ class PostgresFDWExtensionWrapper:
         )
 
         async with self._dst_pool.acquire() as connection:
-            await asyncio.wait([connection.execute(create_fdw_extension_sql)])
-            await asyncio.wait([connection.execute(create_server_sql)])
-            await asyncio.wait([connection.execute(create_user_mapping_sql)])
-            await asyncio.wait([connection.execute(create_temp_src_schema_sql)])
-            await asyncio.wait([connection.execute(import_foreign_schema_sql)])
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(create_fdw_extension_sql)
+                    ),
+                ]
+            )
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(create_server_sql)
+                    ),
+                ]
+            )
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(create_user_mapping_sql)
+                    ),
+                ]
+            )
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(create_temp_src_schema_sql)
+                    ),
+                ]
+            )
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(import_foreign_schema_sql)
+                    ),
+                ]
+            )
 
     async def disable(self):
         drop_temp_src_schema_sql = SQLRepository.get_drop_temp_src_schema_sql()
@@ -65,6 +95,24 @@ class PostgresFDWExtensionWrapper:
         drop_fdw_extension_sql = SQLRepository.get_drop_fdw_extension_sql()
 
         async with self._dst_pool.acquire() as connection:
-            await asyncio.wait([connection.execute(drop_temp_src_schema_sql)])
-            await asyncio.wait([connection.execute(drop_user_mapping_sql)])
-            await asyncio.wait([connection.execute(drop_fdw_extension_sql)])
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(drop_temp_src_schema_sql)
+                    ),
+                ]
+            )
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(drop_user_mapping_sql)
+                    ),
+                ]
+            )
+            await asyncio.wait(
+                [
+                    asyncio.create_task(
+                        connection.execute(drop_fdw_extension_sql)
+                    ),
+                ]
+            )

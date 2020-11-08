@@ -153,9 +153,11 @@ class DatabaserManager:
 
         if hierarchy_column:
             coroutines = [
-                self._get_key_table_parents_values(
-                    key_table_primary_key_name=key_table.primary_key.name,
-                    key_table_primary_key_value=key_column_value,
+                asyncio.create_task(
+                    self._get_key_table_parents_values(
+                        key_table_primary_key_name=key_table.primary_key.name,
+                        key_table_primary_key_value=key_column_value,
+                    )
                 )
                 for key_column_value in copy(self._key_column_values)
             ]
@@ -214,7 +216,9 @@ class DatabaserManager:
         )
 
         coroutines = [
-            self._set_table_counters(table_name)
+            asyncio.create_task(
+                self._set_table_counters(table_name)
+            )
             for table_name in sorted(self._dst_database.tables.keys())
         ]
 
@@ -252,7 +256,13 @@ class DatabaserManager:
                     dst_database=self._dst_database,
                     dst_pool=dst_pool,
                 )
-                await asyncio.wait([fdw_wrapper.disable()])
+                await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            fdw_wrapper.disable()
+                        ),
+                    ]
+                )
 
                 with StatisticIndexer(
                     self._statistic_manager,
@@ -264,7 +274,9 @@ class DatabaserManager:
 
                 await asyncio.wait(
                     [
-                        self._build_key_column_values_hierarchical_structure(),
+                        asyncio.create_task(
+                            self._build_key_column_values_hierarchical_structure()  # noqa
+                        ),
                     ]
                 )
                 with StatisticIndexer(
@@ -273,7 +285,13 @@ class DatabaserManager:
                 ):
                     await self._dst_database.truncate_tables()
 
-                await asyncio.wait([fdw_wrapper.enable()])
+                await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            fdw_wrapper.enable()
+                        ),
+                    ]
+                )
 
                 with StatisticIndexer(
                     self._statistic_manager,
@@ -287,7 +305,13 @@ class DatabaserManager:
                     statistic_manager=self._statistic_manager,
                     key_column_values=self._key_column_values,
                 )
-                await asyncio.wait([collector_manager.manage()])
+                await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            collector_manager.manage()
+                        ),
+                    ]
+                )
 
                 transporter = Transporter(
                     dst_database=self._dst_database,
@@ -300,11 +324,23 @@ class DatabaserManager:
                     self._statistic_manager,
                     TransferringStagesEnum.PREPARING_AND_TRANSFERRING_DATA,
                 ):
-                    await asyncio.wait([transporter.transfer()])
+                    await asyncio.wait(
+                        [
+                            asyncio.create_task(
+                                transporter.transfer()
+                            ),
+                        ]
+                    )
 
                 await self._dst_database.enable_triggers()
 
-                await asyncio.wait([fdw_wrapper.disable()])
+                await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            fdw_wrapper.disable()
+                        ),
+                    ]
+                )
 
                 self._statistic_manager.print_transferring_indications()
                 self._statistic_manager.print_records_transfer_statistic()
