@@ -277,7 +277,9 @@ class DstDatabase(BaseDatabase):
         Setting max table sequence value as max(id) + 1
         """
         coroutines = [
-            table.set_max_sequence(self._connection_pool)
+            asyncio.create_task(
+                table.set_max_sequence(self._connection_pool)
+            )
             for table in self.tables.values()
         ]
 

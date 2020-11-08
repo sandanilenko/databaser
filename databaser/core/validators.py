@@ -120,8 +120,10 @@ class TablesWithKeyColumnValidator(BaseValidator):
 
     async def validate(self):
         coroutines = [
-            self._validate_table_data(
-                table=table,
+            asyncio.create_task(
+                self._validate_table_data(
+                    table=table,
+                )
             )
             for table in self._dst_database.tables_with_key_column
         ]
