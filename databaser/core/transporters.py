@@ -25,8 +25,8 @@ from core.helpers import (
     make_chunks,
 )
 from core.loggers import (
-    StatisticIndexer,
     StatisticManager,
+    statistic_indexer,
 )
 from core.repositories import (
     SQLRepository,
@@ -152,7 +152,7 @@ class Transporter:
         """
         Переносит данный из БД донора в БД приемник
         """
-        with StatisticIndexer(
+        async with statistic_indexer(
             self._statistic_manager,
             TransferringStagesEnum.TRANSFERRING_COLLECTED_DATA
         ):
@@ -164,7 +164,7 @@ class Transporter:
                 ]
             )
 
-        with StatisticIndexer(
+        async with statistic_indexer(
             self._statistic_manager,
             TransferringStagesEnum.UPDATE_SEQUENCES
         ):

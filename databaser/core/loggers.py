@@ -1,6 +1,9 @@
 from collections import (
     defaultdict,
 )
+from contextlib import (
+    asynccontextmanager,
+)
 from datetime import (
     datetime,
 )
@@ -9,7 +12,6 @@ from typing import (
 )
 
 import psutil
-
 from core.db_entities import (
     DBTable,
     DstDatabase,
@@ -87,19 +89,18 @@ class StatisticManager:
             )
 
 
-class StatisticIndexer:
-    def __init__(
-        self,
-        statistic_manager: StatisticManager,
-        stage: int,
-    ):
-        self._statistic_manager = statistic_manager
-        self._stage = stage
+@asynccontextmanager
+async def statistic_indexer(
+    statistic_manager: StatisticManager,
+    stage: int,
+):
+    """
+    Statistic indexer context manager
+    """
+    statistic_manager.set_indication_time(stage)
+    statistic_manager.set_indication_memory(stage)
 
-    def __enter__(self):
-        self._statistic_manager.set_indication_time(self._stage)
-        self._statistic_manager.set_indication_memory(self._stage)
+    yield
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._statistic_manager.set_indication_time(self._stage)
-        self._statistic_manager.set_indication_memory(self._stage)
+    statistic_manager.set_indication_time(stage)
+    statistic_manager.set_indication_memory(stage)

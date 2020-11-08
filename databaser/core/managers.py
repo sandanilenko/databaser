@@ -12,16 +12,16 @@ from typing import (
 )
 
 import asyncpg
+import settings
 from asyncpg import (
     UndefinedFunctionError,
 )
-
-import settings
 from core.collectors import (
     BaseCollector,
     GenericTablesCollector,
     KeyTableCollector,
-    SortedByDependencyTablesCollector, TablesWithKeyColumnSiblingsCollector,
+    SortedByDependencyTablesCollector,
+    TablesWithKeyColumnSiblingsCollector,
 )
 from core.db_entities import (
     DBTable,
@@ -37,8 +37,8 @@ from core.helpers import (
     make_str_from_iterable,
 )
 from core.loggers import (
-    StatisticIndexer,
     StatisticManager,
+    statistic_indexer,
 )
 from core.repositories import (
     SQLRepository,
@@ -264,7 +264,7 @@ class DatabaserManager:
                     ]
                 )
 
-                with StatisticIndexer(
+                async with statistic_indexer(
                     self._statistic_manager,
                     TransferringStagesEnum.PREPARE_DST_DB_STRUCTURE,
                 ):
@@ -279,7 +279,7 @@ class DatabaserManager:
                         ),
                     ]
                 )
-                with StatisticIndexer(
+                async with statistic_indexer(
                     self._statistic_manager,
                     TransferringStagesEnum.TRUNCATE_DST_DB_TABLES,
                 ):
@@ -293,7 +293,7 @@ class DatabaserManager:
                     ]
                 )
 
-                with StatisticIndexer(
+                async with statistic_indexer(
                     self._statistic_manager,
                     TransferringStagesEnum.FILLING_TABLES_ROWS_COUNTS,
                 ):
@@ -320,7 +320,7 @@ class DatabaserManager:
                     key_column_values=self._key_column_values,
                 )
 
-                with StatisticIndexer(
+                async with statistic_indexer(
                     self._statistic_manager,
                     TransferringStagesEnum.PREPARING_AND_TRANSFERRING_DATA,
                 ):

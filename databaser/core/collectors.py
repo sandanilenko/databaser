@@ -16,7 +16,6 @@ from typing import (
 )
 
 import asyncpg
-
 import settings
 from core.db_entities import (
     DBColumn,
@@ -34,8 +33,8 @@ from core.helpers import (
     topological_sort,
 )
 from core.loggers import (
-    StatisticIndexer,
     StatisticManager,
+    statistic_indexer,
 )
 from core.repositories import (
     SQLRepository,
@@ -929,7 +928,7 @@ class GenericTablesCollector(BaseCollector):
     async def collect(self):
         logger.info('start preparing generic tables..')
 
-        with StatisticIndexer(
+        async with statistic_indexer(
             self._statistic_manager,
             TransferringStagesEnum.COLLECT_GENERIC_TABLES_RECORDS_IDS
         ):
