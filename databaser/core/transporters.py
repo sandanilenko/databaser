@@ -25,8 +25,8 @@ from core.helpers import (
     make_chunks,
 )
 from core.loggers import (
-    StatisticIndexer,
     StatisticManager,
+    statistic_indexer,
 )
 from core.repositories import (
     SQLRepository,
@@ -114,10 +114,10 @@ class Transporter:
                 )
 
         if transferred_ids:
-            transferred_ids = [tr[0] for tr in transferred_ids]
-            table.transferred_pks.update(transferred_ids)
+            table.transferred_pks_count += len(transferred_ids)
 
         del transfer_sql
+        del transferred_ids
 
     async def _transfer_collecting_data(self):
         """
@@ -152,7 +152,7 @@ class Transporter:
         """
         Переносит данный из БД донора в БД приемник
         """
-        with StatisticIndexer(
+        async with statistic_indexer(
             self._statistic_manager,
             TransferringStagesEnum.TRANSFERRING_COLLECTED_DATA
         ):
@@ -164,7 +164,7 @@ class Transporter:
                 ]
             )
 
-        with StatisticIndexer(
+        async with statistic_indexer(
             self._statistic_manager,
             TransferringStagesEnum.UPDATE_SEQUENCES
         ):

@@ -371,7 +371,7 @@ class DBTable(object):
         '_key_column',
         'revert_foreign_tables',
         'need_transfer_pks',
-        'transferred_pks',
+        'transferred_pks_count',
     )
 
     schema = 'public'
@@ -403,7 +403,7 @@ class DBTable(object):
         # Pks of table for transferring
         self.need_transfer_pks = set()
 
-        self.transferred_pks = set()
+        self.transferred_pks_count = 0
 
     def __repr__(self):
         return (
@@ -605,6 +605,8 @@ class DBTable(object):
         Updating table need transfer pks
         """
         self.need_transfer_pks.update(need_transfer_pks)
+
+        del need_transfer_pks
 
     async def append_column(
         self,
