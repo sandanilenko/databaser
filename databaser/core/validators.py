@@ -95,9 +95,10 @@ class TablesWithKeyColumnValidator(BaseValidator):
         )
 
         async with self._dst_database.connection_pool.acquire() as connection:
-            key_column_ids_records: List[Record] = await connection.fetch(
-                query=get_table_key_column_ids_sql,
-            )
+            async with connection.transaction():
+                key_column_ids_records: List[Record] = await connection.fetch(
+                    query=get_table_key_column_ids_sql,
+                )
 
         if key_column_ids_records:
             key_column_ids = {

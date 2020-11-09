@@ -65,25 +65,26 @@ class BaseCollector(metaclass=ABCMeta):
             logger.debug(table_column_values_sql)
 
             async with self._src_database.connection_pool.acquire() as connection:  # noqa
-                try:
-                    table_column_values_part = await connection.fetch(table_column_values_sql)  # noqa
-                except asyncpg.PostgresSyntaxError as e:
-                    logger.warning(
-                        f"{str(e)} --- {table_column_values_sql} --- "
-                        f"_get_table_column_values_part"
-                    )
-                    table_column_values_part = []
+                async with connection.transaction():
+                    try:
+                        table_column_values_part = await connection.fetch(table_column_values_sql)  # noqa
+                    except asyncpg.PostgresSyntaxError as e:
+                        logger.warning(
+                            f"{str(e)} --- {table_column_values_sql} --- "
+                            f"_get_table_column_values_part"
+                        )
+                        table_column_values_part = []
 
-                filtered_table_column_values_part = [
-                    record[0]
-                    for record in table_column_values_part if
-                    record[0] is not None
-                ]
+            filtered_table_column_values_part = [
+                record[0]
+                for record in table_column_values_part if
+                record[0] is not None
+            ]
 
-                table_column_values.extend(filtered_table_column_values_part)
+            table_column_values.extend(filtered_table_column_values_part)
 
-                del table_column_values_part
-                del table_column_values_sql
+            del table_column_values_part
+            del table_column_values_sql
 
     async def _get_table_column_values(
         self,

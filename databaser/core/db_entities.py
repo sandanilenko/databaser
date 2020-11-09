@@ -82,14 +82,15 @@ class BaseDatabase(object):
         )
 
         async with self._connection_pool.acquire() as connection:
-            table_names = await connection.fetch(
-                query=select_tables_names_list_sql,
-            )
+            async with connection.transaction():
+                table_names = await connection.fetch(
+                    query=select_tables_names_list_sql,
+                )
 
-            self.table_names = [
-                table_name_rec[0]
-                for table_name_rec in table_names
-            ]
+        self.table_names = [
+            table_name_rec[0]
+            for table_name_rec in table_names
+        ]
 
     async def execute_raw_sql(
         self,
@@ -101,10 +102,12 @@ class BaseDatabase(object):
         connection = await asyncpg.connect(self.connection_str)
 
         try:
-            await connection.execute(raw_sql)
+            async with connection.transaction():
+                await connection.execute(raw_sql)
         finally:
-            del raw_sql
             await connection.close()
+
+        del raw_sql
 
     async def fetch_raw_sql(
         self,
@@ -116,7 +119,8 @@ class BaseDatabase(object):
         connection = await asyncpg.connect(self.connection_str)
 
         try:
-            result = await connection.fetch(raw_sql)
+            async with connection.transaction():
+                result = await connection.fetch(raw_sql)
         finally:
             await connection.close()
 
@@ -212,9 +216,10 @@ class DstDatabase(BaseDatabase):
         )
 
         async with self._connection_pool.acquire() as connection:
-            records = await connection.fetch(
-                query=getting_tables_columns_sql,
-            )
+            async with connection.transaction():
+                records = await connection.fetch(
+                    query=getting_tables_columns_sql,
+                )
 
         coroutines = [
             self.tables[table_name].append_column(
@@ -716,9 +721,10 @@ class DBTable(object):
                 )
                 return
 
-            serial_seq_name = await connection.fetchrow(
-                get_serial_sequence_sql
-            )
+            async with connection.transaction():
+                serial_seq_name = await connection.fetchrow(
+                    get_serial_sequence_sql
+                )
 
             if serial_seq_name and serial_seq_name[0]:
                 serial_seq_name = serial_seq_name[0]
@@ -732,7 +738,8 @@ class DBTable(object):
                     )
                 )
 
-                await connection.execute(set_sequence_val_sql)
+                async with connection.transaction():
+                    await connection.execute(set_sequence_val_sql)
 
 
 class DBColumn(object):

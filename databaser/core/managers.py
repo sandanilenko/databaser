@@ -129,16 +129,17 @@ class DatabaserManager:
                 order by "hierarchy"."level" desc;
             """
 
-            records = await connection.fetch(get_key_table_parents_values_sql)
+            async with connection.transaction():
+                records = await connection.fetch(get_key_table_parents_values_sql)
 
-            self._key_column_values.update(
-                [
-                    record.get('id')
-                    for record in records
-                ]
-            )
+        self._key_column_values.update(
+            [
+                record.get('id')
+                for record in records
+            ]
+        )
 
-            del get_key_table_parents_values_sql
+        del get_key_table_parents_values_sql
 
     async def _build_key_column_values_hierarchical_structure(self):
         """
@@ -192,23 +193,24 @@ class DatabaserManager:
             except UndefinedFunctionError:
                 raise UndefinedFunctionError
 
-            res = await connection.fetchrow(count_table_records_sql)
+            async with connection.transaction():
+                res = await connection.fetchrow(count_table_records_sql)
 
-            if res and res[0] and res[1]:
-                logger.debug(
-                    f"table {table_name} with full count {res[0]}, "
-                    f"max pk - {res[1]}"
-                )
+        if res and res[0] and res[1]:
+            logger.debug(
+                f"table {table_name} with full count {res[0]}, "
+                f"max pk - {res[1]}"
+            )
 
-                table.full_count = int(res[0])
+            table.full_count = int(res[0])
 
-                table.max_pk = (
-                    int(res[1])
-                    if isinstance(res[1], int)
-                    else table.full_count + 100000
-                )
+            table.max_pk = (
+                int(res[1])
+                if isinstance(res[1], int)
+                else table.full_count + 100000
+            )
 
-            del count_table_records_sql
+        del count_table_records_sql
 
     async def _set_tables_counters(self):
         logger.info(

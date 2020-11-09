@@ -101,7 +101,8 @@ class Transporter:
         transferred_ids = None
         async with self._dst_database.connection_pool.acquire() as connection:
             try:
-                transferred_ids = await connection.fetch(transfer_sql)
+                async with connection.transaction():
+                    transferred_ids = await connection.fetch(transfer_sql)
             except (
                 UndefinedColumnError,
                 NotNullViolationError,
