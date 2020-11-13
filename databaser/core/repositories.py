@@ -5,6 +5,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -662,3 +663,59 @@ class SQLRepository:
         django_content_type
         """
         return cls.CONTENT_TYPE_SQL_TEMPLATE
+
+    @classmethod
+    def create_table_sql(
+        cls,
+        table,
+        column_names: Tuple[str],
+        prefix: str = '',
+    ):
+        """
+        Generate sql script for creating table by existed table
+        """
+        columns_sqls = []
+
+        for column_name in column_names:
+            column = table.columns[column_name]
+
+            data_type = column.data_type
+
+            if data_type == DataTypesEnum.CHARACTER_VARYING:
+                data_type = DataTypesEnum.TEXT
+
+            column_name = f'{prefix}_{column.name}' if prefix else column.name
+
+            columns_sqls.append(
+                f'{column_name} {data_type}'
+            )
+
+        columns_sql = ',\n'.join(columns_sqls)
+
+        table_name = f'{prefix}_{table.name}' if prefix else table.name
+
+        return (
+            f'CREATE TABLE {table_name} (\n{columns_sql}\n);'
+        )
+
+    @classmethod
+    def get_drop_table_queries(
+        cls,
+        table_names: Iterable[str],
+    ):
+        """
+        Generating sql scripts for dropping tables
+        """
+        queries = []
+
+        chunks = make_chunks(
+            iterable=table_names,
+            size=settings.TABLES_LIMIT_PER_TRANSACTION,
+        )
+
+        for chunk in chunks:
+            queries.append(
+                f'DROP TABLE {", ".join(chunk)};'
+            )
+
+        return queries

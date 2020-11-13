@@ -301,6 +301,12 @@ class DatabaserManager:
                 ):
                     await self._set_tables_counters()
 
+                async with statistic_indexer(
+                    self._statistic_manager,
+                    TransferringStagesEnum.CREATING_TEMP_TABLES,
+                ):
+                    await self._dst_database.create_temp_tables()
+
                 collector_manager = CollectorManager(
                     src_database=self._src_database,
                     dst_database=self._dst_database,
@@ -333,6 +339,12 @@ class DatabaserManager:
                             ),
                         ]
                     )
+
+                async with statistic_indexer(
+                    self._statistic_manager,
+                    TransferringStagesEnum.DROPPING_TEMP_TABLES,
+                ):
+                    await self._dst_database.drop_temp_tables()
 
                 await self._dst_database.enable_triggers()
 

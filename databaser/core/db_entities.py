@@ -16,11 +16,13 @@ from typing import (
 )
 
 import asyncpg
+import settings
 from asyncpg.pool import (
     Pool,
 )
-
-import settings
+from core.consts import (
+    TEMP_PREFIX,
+)
 from core.enums import (
     ConstraintTypesEnum,
 )
@@ -140,6 +142,7 @@ class BaseDatabase(object):
         DBTable.fk_columns_tables_with_fk_columns_with_key_column.fget.cache_clear()
         DBTable.unique_fk_columns_tables_with_fk_columns_with_key_column.fget.cache_clear()
         DBTable.highest_priority_fk_columns.fget.cache_clear()
+
 
 class SrcDatabase(BaseDatabase):
     """
@@ -358,6 +361,68 @@ class DstDatabase(BaseDatabase):
         await self.execute_raw_sql(enable_triggers_sql)
 
         logger.info('triggers enabled.')
+
+    async def create_temp_tables(self):
+        """
+        Creating temp tables for storaging table records ids for transferring
+        """
+        logger.info('start creating temp tables..')
+
+        create_table_sqls = []
+
+        for table in self.tables.values():
+            try:
+                create_table_sql = SQLRepository.create_table_sql(
+                    table=table,
+                    column_names=(
+                        table.primary_key.name,
+                    ),
+                    prefix=TEMP_PREFIX,
+                )
+            except Exception as e:
+                raise Exception
+
+            create_table_sqls.append(create_table_sql)
+
+        chunks = make_chunks(
+            iterable=create_table_sqls,
+            size=settings.TABLES_LIMIT_PER_TRANSACTION,
+        )
+
+        coroutines = [
+            asyncio.create_task(
+                self.execute_raw_sql(
+                    raw_sql='\n'.join(chunk),
+                )
+            )
+            for chunk in chunks
+        ]
+
+        await asyncio.wait(coroutines)
+
+        logger.info('creating temp tables finished.')
+
+    async def drop_temp_tables(self):
+        """
+        Dropping temp tables
+        """
+        table_names = [
+            f'{TEMP_PREFIX}_{table.name}'
+            for table in self.tables.values()
+        ]
+
+        coroutines = [
+            asyncio.create_task(
+                self.execute_raw_sql(
+                    raw_sql=query,
+                )
+            )
+            for query in SQLRepository.get_drop_table_queries(
+                table_names=table_names,
+            )
+        ]
+
+        await asyncio.wait(coroutines)
 
 
 class DBTable(object):
