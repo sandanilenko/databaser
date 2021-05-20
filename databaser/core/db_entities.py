@@ -586,10 +586,12 @@ class DBTable(object):
         """
         if self.unique_fk_columns_with_key_column:
             fk_columns = self.unique_fk_columns_with_key_column
-        elif self.unique_fk_columns_tables_with_fk_columns_with_key_column:
-            fk_columns = self.unique_fk_columns_tables_with_fk_columns_with_key_column  # noqa
-        elif self.fk_columns_with_key_column:
-            fk_columns = self.fk_columns_with_key_column
+        elif self.unique_fk_columns_tables_with_fk_columns_with_key_column or self.fk_columns_with_key_column:
+            fk_columns = []
+            if self.unique_fk_columns_tables_with_fk_columns_with_key_column:
+                fk_columns.extend(self.unique_fk_columns_tables_with_fk_columns_with_key_column)
+            if self.fk_columns_with_key_column:
+                fk_columns.extend(self.fk_columns_with_key_column)
         elif self.fk_columns_tables_with_fk_columns_with_key_column:
             fk_columns = self.fk_columns_tables_with_fk_columns_with_key_column
         else:
