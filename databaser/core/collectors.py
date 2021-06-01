@@ -330,8 +330,26 @@ class TablesWithKeyColumnSiblingsCollector(BaseCollector):
             )
         ]
 
+        coroutines_hierarchy = [
+            asyncio.create_task(
+                self._direct_recursively_preparing_foreign_table(
+                    table=table,
+                    column=column,
+                    need_transfer_pks=need_transfer_pks,
+                    stack_tables=stack_tables - {table},
+                )
+            )
+            for column in table.self_fk_columns if
+            not (
+                column.constraint_table.is_ready_for_transferring
+            )
+        ]
+
         if coroutines:
             await asyncio.wait(coroutines)
+
+        if coroutines_hierarchy:
+            await asyncio.wait(coroutines_hierarchy)
 
         table.is_checked = True
 
