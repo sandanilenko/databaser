@@ -1,4 +1,4 @@
-FROM python:3.9.0
+FROM python:3.9.6
 
 RUN apt update \
     && apt -y install libpq-dev \
