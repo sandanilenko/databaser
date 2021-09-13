@@ -1,0 +1,27 @@
+image: docker:latest
+
+services:
+    - docker:dind
+
+stages:
+    - build
+    - deploy
+
+before_script:
+    - docker info
+    - docker login -u gitlab-ci-token -p $CI_BUILD_TOKEN $CI_REGISTRY
+
+build:
+    stage: build
+    only:
+        - master
+    script:
+        - docker build -t gitlab.bars.group/a.danilenko/databaser:latest .
+
+deploy:
+    stage: deploy
+    only:
+        - master
+
+    script:
+        - docker push gitlab.bars.group/a.danilenko/databaser:latest
