@@ -17,6 +17,8 @@ build:
         - master
     script:
         - docker build -t gitlab.bars.group/a.danilenko/databaser:latest .
+    tags:
+        - runner-01
 
 deploy:
     stage: deploy
@@ -25,3 +27,5 @@ deploy:
 
     script:
         - docker push gitlab.bars.group/a.danilenko/databaser:latest
+    tags:
+        - runner-01
