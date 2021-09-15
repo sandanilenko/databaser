@@ -11,8 +11,6 @@ stages:
     - deploy
 
 before_script:
-    - sudo mkdir -p /etc/docker/certs.d/nexus.budg.bars.group/
-    - sudo curl -o /etc/docker/certs.d/nexus.budg.bars.group/nexus.budg.bars.group.crt nexus.budg.bars.group/nexus.budg.bars.group.crt
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD nexus.budg.bars.group
 
 build:
