@@ -1,5 +1,8 @@
 image: docker:latest
 
+variables:
+  GIT_STRATEGY: clone
+  
 services:
     - docker:dind
 
