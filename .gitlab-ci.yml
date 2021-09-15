@@ -28,6 +28,6 @@ deploy:
         - master
 
     script:
-        - docker push gitlab.bars.group/a.danilenko/databaser:latest
+        - docker push $CI_REGISTRY/a.danilenko/databaser:latest
     tags:
         - gitlab-databaser
