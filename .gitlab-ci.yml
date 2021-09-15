@@ -18,7 +18,7 @@ build:
     only:
         - master
     script:
-        - docker build -t gitlab.bars.group/a.danilenko/databaser:latest .
+        - docker build -t nexus.budg.bars.group/databaser:latest .
     tags:
         - gitlab-databaser
 
@@ -28,6 +28,6 @@ deploy:
         - master
 
     script:
-        - docker push gitlab.bars.group/a.danilenko/databaser:latest
+        - docker push nexus.budg.bars.group/databaser:latest
     tags:
         - gitlab-databaser
