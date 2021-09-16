@@ -119,26 +119,45 @@ FDW-расширения PostgreSQL. В процессе формируются 
 
 ## Сборка и распространение
 
+### Сборка
 Databaser распространяется в виде Docker-образа, что снижает количество зависимостей, необходимых для установки на 
-локальной машине.
+локальной машине. Для надежности и возможности организации открытого доступа, образ выкладывается как на внутренний 
+[Nexus](http://nexus.budg.bars.group/), так и в [Docker Hub](https://hub.docker.com/).
 
 ```bash
 $ git pull origin master
 
+# Для Nexus
+$ IMAGE_NAME=nexus.budg.bars.group/databaser:latest
+
+# Для Docker Hub
 $ IMAGE_NAME=sandanilenko/databaser:latest
 
 $ docker build --tag $IMAGE_NAME .
 $ docker push $IMAGE_NAME
 ```
 
-Образ хранится в общем доступе на [Docker Hub](https://hub.docker.com/r/sandanilenko/databaser).
+### Скачивание
+
+Для скачивания образа на локальную машину необходимо выполнить команду:
+
+```bash
+# Для выкачивания из Nexus
+$ docker pull nexus.budg.bars.group/databaser:latest
+
+# Для выкачивания из Docker Hub
+$ docker pull sandanilenko/databaser:latest
+```
+
+На основе полученного образа необходимо запустить контейнер.
 
 ## Инструкция для разработчика
 
 ### Клонирование проекта
 
 Перед началом внесения правок, необходимо склонировать проект Databaser на локальную машину. Проект находится на 
-[GitLab](ssh://git@192.168.233.37:8022/a.danilenko/databaser.git) и является публичным.  Для внесения правок, 
+[GitLab](ssh://git@192.168.233.37:8022/a.danilenko/databaser.git) или 
+[GitHub](https://github.com/sandanilenko/databaser) и является публичным.  Для внесения правок, 
 необходимо создать форк проекта и работать с ним.
 
 Предполагается, что разработчик работает в Unix-подобной системе и в корневой директории пользователя имеется 
@@ -151,12 +170,12 @@ $ cd ~/projects/
 Клонирование проекта выполняется с помощью команды
 
 ```bash
-
 $ git clone ssh://git@192.168.233.37:8022/<username>/databaser.git
-```
 
-После того, как проект будет склонирован, необходимо установить botoolkit для удобной генерации конфигурационного файла 
-Databaser и запуска тестовой целевой БД.
+или
+
+$ git clone git@github.com:<username>/databaser.git
+```
 
 ### База-донор
 
