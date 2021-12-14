@@ -13,6 +13,7 @@ from typing import (
 
 import asyncpg
 import settings
+import uvloop
 from asyncpg import (
     UndefinedFunctionError,
 )
@@ -359,6 +360,7 @@ class DatabaserManager:
         start = datetime.now()
         logger.info(f'date start - {start}')
 
+        uvloop.install()
         asyncio.run(
             self._main(),
             debug=settings.TEST_MODE,
