@@ -44,6 +44,9 @@ from core.repositories import (
 class BaseCollector(metaclass=ABCMeta):
     CHUNK_SIZE = 60000
 
+    # Hashes of unique SQL-queries uses for excluding duplicate of queries
+    QUERY_HASHES = set()
+
     def __init__(
         self,
         src_database: SrcDatabase,
@@ -115,10 +118,15 @@ class BaseCollector(metaclass=ABCMeta):
         table_column_values = []
 
         for table_column_values_sql in table_column_values_sql_list:
-            await self._get_table_column_values_part(
-                table_column_values_sql=table_column_values_sql,
-                table_column_values=table_column_values,
-            )
+            sql_query_hash = hash(table_column_values_sql)
+
+            if sql_query_hash not in self.__class__.QUERY_HASHES:
+                BaseCollector.QUERY_HASHES.add(sql_query_hash)
+
+                await self._get_table_column_values_part(
+                    table_column_values_sql=table_column_values_sql,
+                    table_column_values=table_column_values,
+                )
 
         del table_column_values_sql_list[:]
 
