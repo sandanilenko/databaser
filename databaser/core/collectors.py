@@ -70,7 +70,7 @@ class BaseCollector(metaclass=ABCMeta):
             async with self._src_database.connection_pool.acquire() as connection:  # noqa
                 try:
                     table_column_values_part = await connection.fetch(table_column_values_sql)  # noqa
-                except asyncpg.PostgresSyntaxError as e:
+                except (asyncpg.PostgresSyntaxError, asyncpg.UndefinedColumnError) as e:
                     logger.warning(
                         f"{str(e)} --- {table_column_values_sql} --- "
                         f"_get_table_column_values_part"
