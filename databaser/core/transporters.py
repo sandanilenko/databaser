@@ -96,7 +96,7 @@ class Transporter:
             primary_key_ids=need_import_ids_chunk,
         )
 
-        logger.info(f'transfer chunk table data - {table.name}')
+        logger.info(f'transfer chunk table data - "{table.name}"')
 
         transferred_ids = None
         async with self._dst_database.connection_pool.acquire() as connection:
