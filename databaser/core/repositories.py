@@ -71,6 +71,14 @@ class SQLRepository:
         truncate {table_names} cascade;
     """
 
+    SELECT_PARTITION_NAMES_LIST_SQL_TEMPLATE = """
+        select pt.relname
+        from pg_class base_tb
+          join pg_inherits i on i.inhparent = base_tb.oid
+          join pg_class pt on pt.oid = i.inhrelid
+        where pt.relpartbound is not null;
+    """
+
     SELECT_TABLES_NAMES_LIST_SQL_TEMPLATE = """
         select table_name
         from information_schema.tables
@@ -263,6 +271,10 @@ class SQLRepository:
             queries.append(query)
 
         return queries
+
+    @classmethod
+    def get_select_partition_names_list_sql(cls):
+        return cls.SELECT_PARTITION_NAMES_LIST_SQL_TEMPLATE
 
     @classmethod
     def get_select_tables_names_list_sql(

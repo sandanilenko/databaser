@@ -265,6 +265,18 @@ class DatabaserManager:
                     ]
                 )
 
+                await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            self._dst_database.prepare_partition_names()
+                        ),
+                    ]
+                )
+
+                if self._dst_database.partition_names:
+                    logger.info(f'dst_database partitions - {", ".join(self._dst_database.partition_names)}')
+                    settings.EXCLUDED_TABLES.extend(self._dst_database.partition_names)
+
                 async with statistic_indexer(
                     self._statistic_manager,
                     TransferringStagesEnum.PREPARE_DST_DB_STRUCTURE,

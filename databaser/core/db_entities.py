@@ -52,6 +52,7 @@ class BaseDatabase(object):
             db_connection_parameters
         )
         self.table_names: Optional[List[str]] = None
+        self.partition_names: Optional[List[str]] = None
         self.tables: Optional[Dict[str, DBTable]] = None
 
         self._connection_pool: Optional[Pool] = None
@@ -72,6 +73,24 @@ class BaseDatabase(object):
         pool: Pool,
     ):
         self._connection_pool = pool
+
+    async def prepare_partition_names(self):
+        """
+        Prepare partitions for exclude their from transferring tables data
+        """
+        select_partition_names_list_sql = SQLRepository.get_select_partition_names_list_sql()
+
+        async with self._connection_pool.acquire() as connection:
+            partition_names = await connection.fetch(
+                query=select_partition_names_list_sql,
+            )
+
+            self.partition_names = [
+                partition_name_rec[0]
+                for partition_name_rec in partition_names
+            ]
+
+
 
     async def prepare_table_names(self):
         """

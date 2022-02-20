@@ -15,6 +15,7 @@ from itertools import (
 )
 from typing import (
     Iterable,
+    List,
     Tuple,
     Union,
 )
@@ -192,6 +193,25 @@ def get_iterable_environ_parameter(
     Getting iterable environment variable as tuple
     """
     return tuple(
+        map(
+            type_,
+            filter(
+                None,
+                os.environ.get(name, '').replace(' ', '').split(separator)  # noqa
+            )
+        )
+    )
+
+
+def get_extensible_iterable_environ_parameter(
+    name: str,
+    separator: str = ',',
+    type_=str,
+) -> List[str]:
+    """
+    Getting extensible iterable environment variable as list
+    """
+    return list(
         map(
             type_,
             filter(
