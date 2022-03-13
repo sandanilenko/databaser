@@ -12,46 +12,65 @@ from typing import (
 )
 
 import asyncpg
-import settings
 import uvloop
 from asyncpg import (
     UndefinedFunctionError,
 )
-from core.collectors import (
+
+from databaser.core.collectors import (
     BaseCollector,
     GenericTablesCollector,
     KeyTableCollector,
     SortedByDependencyTablesCollector,
     TablesWithKeyColumnSiblingsCollector,
 )
-from core.db_entities import (
+from databaser.core.db_entities import (
     DBTable,
     DstDatabase,
     SrcDatabase,
 )
-from core.enums import (
+from databaser.core.enums import (
     TransferringStagesEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     DBConnectionParameters,
     logger,
     make_str_from_iterable,
 )
-from core.loggers import (
+from databaser.core.loggers import (
     StatisticManager,
     statistic_indexer,
 )
-from core.repositories import (
+from databaser.core.repositories import (
     SQLRepository,
 )
-from core.transporters import (
+from databaser.core.transporters import (
     Transporter,
 )
-from core.validators import (
+from databaser.core.validators import (
     ValidatorManager,
 )
-from core.wrappers import (
+from databaser.core.wrappers import (
     PostgresFDWExtensionWrapper,
+)
+from databaser.settings import (
+    DST_DB_HOST,
+    DST_DB_NAME,
+    DST_DB_PASSWORD,
+    DST_DB_PORT,
+    DST_DB_SCHEMA,
+    DST_DB_USER,
+    EXCLUDED_TABLES,
+    KEY_COLUMN_VALUES,
+    KEY_TABLE_HIERARCHY_COLUMN_NAME,
+    KEY_TABLE_NAME,
+    SRC_DB_HOST,
+    SRC_DB_NAME,
+    SRC_DB_PASSWORD,
+    SRC_DB_PORT,
+    SRC_DB_SCHEMA,
+    SRC_DB_USER,
+    TEST_MODE,
 )
 
 
@@ -66,21 +85,21 @@ class DatabaserManager:
         **kwargs,
     ):
         self._src_db_connection_parameters = DBConnectionParameters(
-            host=settings.SRC_DB_HOST,
-            port=settings.SRC_DB_PORT,
-            schema=settings.SRC_DB_SCHEMA,
-            dbname=settings.SRC_DB_NAME,
-            user=settings.SRC_DB_USER,
-            password=settings.SRC_DB_PASSWORD,
+            host=SRC_DB_HOST,
+            port=SRC_DB_PORT,
+            schema=SRC_DB_SCHEMA,
+            dbname=SRC_DB_NAME,
+            user=SRC_DB_USER,
+            password=SRC_DB_PASSWORD,
         )
 
         self._dst_db_connection_parameters = DBConnectionParameters(
-            host=settings.DST_DB_HOST,
-            port=settings.DST_DB_PORT,
-            schema=settings.DST_DB_SCHEMA,
-            dbname=settings.DST_DB_NAME,
-            user=settings.DST_DB_USER,
-            password=settings.DST_DB_PASSWORD,
+            host=DST_DB_HOST,
+            port=DST_DB_PORT,
+            schema=DST_DB_SCHEMA,
+            dbname=DST_DB_NAME,
+            user=DST_DB_USER,
+            password=DST_DB_PASSWORD,
         )
 
         self._src_database = SrcDatabase(
@@ -95,7 +114,7 @@ class DatabaserManager:
             database=self._dst_database,
         )
 
-        self._key_column_values = set(settings.KEY_COLUMN_VALUES)
+        self._key_column_values = set(KEY_COLUMN_VALUES)
 
     async def _get_key_table_parents_values(
         self,
@@ -107,26 +126,26 @@ class DatabaserManager:
         """
         async with self._src_database.connection_pool.acquire() as connection:
             get_key_table_parents_values_sql = f"""
-                with recursive hierarchy("{key_table_primary_key_name}", "{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}", "level") as (
-                    select "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}", 
-                        "{settings.KEY_TABLE_NAME}"."{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}", 
+                with recursive hierarchy("{key_table_primary_key_name}", "{KEY_TABLE_HIERARCHY_COLUMN_NAME}", "level") as (
+                    select "{KEY_TABLE_NAME}"."{key_table_primary_key_name}", 
+                        "{KEY_TABLE_NAME}"."{KEY_TABLE_HIERARCHY_COLUMN_NAME}", 
                         0 
-                    from "{settings.KEY_TABLE_NAME}" 
-                    where "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = {key_table_primary_key_value}
+                    from "{KEY_TABLE_NAME}" 
+                    where "{KEY_TABLE_NAME}"."{key_table_primary_key_name}" = {key_table_primary_key_value}
         
                     union all
         
                     select
-                        "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}",
-                        "{settings.KEY_TABLE_NAME}"."{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}",
+                        "{KEY_TABLE_NAME}"."{key_table_primary_key_name}",
+                        "{KEY_TABLE_NAME}"."{KEY_TABLE_HIERARCHY_COLUMN_NAME}",
                         "hierarchy"."level" + 1
-                    from "{settings.KEY_TABLE_NAME}" 
-                    join "hierarchy" on "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."{settings.KEY_TABLE_HIERARCHY_COLUMN_NAME}"
+                    from "{KEY_TABLE_NAME}" 
+                    join "hierarchy" on "{KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."{KEY_TABLE_HIERARCHY_COLUMN_NAME}"
                 )
-                select "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" {key_table_primary_key_name} 
-                from "{settings.KEY_TABLE_NAME}" 
-                join "hierarchy" on "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."{key_table_primary_key_name}"
-                where "{settings.KEY_TABLE_NAME}"."{key_table_primary_key_name}" <> {key_table_primary_key_value}
+                select "{KEY_TABLE_NAME}"."{key_table_primary_key_name}" {key_table_primary_key_name} 
+                from "{KEY_TABLE_NAME}" 
+                join "hierarchy" on "{KEY_TABLE_NAME}"."{key_table_primary_key_name}" = "hierarchy"."{key_table_primary_key_name}"
+                where "{KEY_TABLE_NAME}"."{key_table_primary_key_name}" <> {key_table_primary_key_value}
                 order by "hierarchy"."level" desc;
             """
 
@@ -147,9 +166,9 @@ class DatabaserManager:
         """
         logger.info("build tree of enterprises for transfer process")
 
-        key_table: DBTable = self._dst_database.tables.get(settings.KEY_TABLE_NAME)
+        key_table: DBTable = self._dst_database.tables.get(KEY_TABLE_NAME)
         hierarchy_column = await key_table.get_column_by_name(
-            column_name=settings.KEY_TABLE_HIERARCHY_COLUMN_NAME,
+            column_name=KEY_TABLE_HIERARCHY_COLUMN_NAME,
         )
 
         if hierarchy_column:
@@ -275,7 +294,7 @@ class DatabaserManager:
 
                 if self._dst_database.partition_names:
                     logger.info(f'dst_database partitions - {", ".join(self._dst_database.partition_names)}')
-                    settings.EXCLUDED_TABLES.extend(self._dst_database.partition_names)
+                    EXCLUDED_TABLES.extend(self._dst_database.partition_names)
 
                 async with statistic_indexer(
                     self._statistic_manager,
@@ -358,7 +377,7 @@ class DatabaserManager:
                 self._statistic_manager.print_transferring_indications()
                 self._statistic_manager.print_records_transfer_statistic()
 
-                if settings.TEST_MODE:
+                if TEST_MODE:
                     validator_manager = ValidatorManager(
                         dst_database=self._dst_database,
                         src_database=self._src_database,
@@ -375,7 +394,7 @@ class DatabaserManager:
         uvloop.install()
         asyncio.run(
             self._main(),
-            debug=settings.TEST_MODE,
+            debug=TEST_MODE,
         )
 
         finish = datetime.now()

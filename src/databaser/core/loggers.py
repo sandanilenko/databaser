@@ -12,14 +12,15 @@ from typing import (
 )
 
 import psutil
-from core.db_entities import (
+
+from databaser.core.db_entities import (
     DBTable,
     DstDatabase,
 )
-from core.enums import (
+from databaser.core.enums import (
     TransferringStagesEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     dates_list_to_str,
     logger,
 )

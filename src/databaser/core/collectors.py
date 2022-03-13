@@ -16,28 +16,33 @@ from typing import (
 )
 
 import asyncpg
-import settings
-from core.db_entities import (
+
+from databaser.core.db_entities import (
     DBColumn,
     DBTable,
     DstDatabase,
     SrcDatabase,
 )
-from core.enums import (
+from databaser.core.enums import (
     TransferringStagesEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     logger,
     make_chunks,
     make_str_from_iterable,
     topological_sort,
 )
-from core.loggers import (
+from databaser.core.loggers import (
     StatisticManager,
     statistic_indexer,
 )
-from core.repositories import (
+from databaser.core.repositories import (
     SQLRepository,
+)
+from databaser.settings import (
+    EXCLUDED_TABLES,
+    KEY_TABLE_NAME,
+    TABLES_WITH_GENERIC_FOREIGN_KEY,
 )
 
 
@@ -99,7 +104,7 @@ class BaseCollector(metaclass=ABCMeta):
         # если таблица находится в исключенных, то ее записи не нужно
         # импортировать
         try:
-            if column.constraint_table.name in settings.EXCLUDED_TABLES:
+            if column.constraint_table.name in EXCLUDED_TABLES:
                 return set()
         except AttributeError as e:
             logger.warning(f"{str(e)} --- _get_table_column_values")
@@ -151,7 +156,7 @@ class KeyTableCollector(BaseCollector):
     async def _prepare_key_table_values(self):
         logger.info('prepare key table values...')
 
-        key_table = self._dst_database.tables[settings.KEY_TABLE_NAME]
+        key_table = self._dst_database.tables[KEY_TABLE_NAME]
 
         key_table.update_need_transfer_pks(
             need_transfer_pks=self._key_column_values,
@@ -749,7 +754,7 @@ class SortedByDependencyTablesCollector(BaseCollector):
             filter(
                 lambda t: (
                     not t.is_ready_for_transferring
-                    and t.name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+                    and t.name not in TABLES_WITH_GENERIC_FOREIGN_KEY
                 ),
                 self._dst_database.tables.values(),
             )
@@ -933,9 +938,7 @@ class GenericTablesCollector(BaseCollector):
             ]
         )
 
-        generic_table_names = set(
-            settings.TABLES_WITH_GENERIC_FOREIGN_KEY
-        ).difference(settings.EXCLUDED_TABLES)
+        generic_table_names = set(TABLES_WITH_GENERIC_FOREIGN_KEY).difference(EXCLUDED_TABLES)
 
         coroutines = [
             asyncio.create_task(

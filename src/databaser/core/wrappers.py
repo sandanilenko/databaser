@@ -4,11 +4,11 @@ from asyncpg.pool import (
     Pool,
 )
 
-from core.db_entities import (
+from databaser.core.db_entities import (
     DstDatabase,
     SrcDatabase,
 )
-from core.repositories import (
+from databaser.core.repositories import (
     SQLRepository,
 )
 

@@ -8,16 +8,20 @@ from typing import (
     Union,
 )
 
-import settings
-from core.enums import (
+from databaser.core.enums import (
     ConstraintTypesEnum,
     DataTypesEnum,
     LogLevelEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     logger,
     make_chunks,
     make_str_from_iterable,
+)
+from databaser.settings import (
+    KEY_COLUMN_NAMES,
+    LOG_LEVEL,
+    TABLES_LIMIT_PER_TRANSACTION,
 )
 
 
@@ -258,7 +262,7 @@ class SQLRepository:
 
         chunks = make_chunks(
             iterable=table_names,
-            size=settings.TABLES_LIMIT_PER_TRANSACTION,
+            size=TABLES_LIMIT_PER_TRANSACTION,
         )
         for chunk in chunks:
             query = cls.TRUNCATE_TABLE_SQL_TEMPLATE.format(
@@ -357,7 +361,7 @@ class SQLRepository:
         Метод получения запроса получения идентификаторов таблицы с указанием
         условий
         """
-        if settings.LOG_LEVEL == LogLevelEnum.DEBUG:
+        if LOG_LEVEL == LogLevelEnum.DEBUG:
             logger.debug(
                 f"SQL constraint ids. table name - {table.name}, "
                 f"column_name - {column.name}, "
@@ -386,7 +390,7 @@ class SQLRepository:
             where_conditions = []
 
             for c_name, c_ids in where_conditions_columns.items():
-                if c_name in settings.KEY_COLUMN_NAMES:
+                if c_name in KEY_COLUMN_NAMES:
                     continue
 
                 condition_column = await table.get_column_by_name(c_name)

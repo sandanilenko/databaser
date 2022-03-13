@@ -1,4 +1,4 @@
-from core.managers import (
+from databaser.core.managers import (
     DatabaserManager,
 )
 

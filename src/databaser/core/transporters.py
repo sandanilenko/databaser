@@ -12,23 +12,24 @@ from asyncpg import (
     PostgresSyntaxError,
     UndefinedColumnError,
 )
-from core.db_entities import (
+
+from databaser.core.db_entities import (
     DBTable,
     DstDatabase,
     SrcDatabase,
 )
-from core.enums import (
+from databaser.core.enums import (
     TransferringStagesEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     logger,
     make_chunks,
 )
-from core.loggers import (
+from databaser.core.loggers import (
     StatisticManager,
     statistic_indexer,
 )
-from core.repositories import (
+from databaser.core.repositories import (
     SQLRepository,
 )
 

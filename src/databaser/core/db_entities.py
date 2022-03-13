@@ -12,6 +12,7 @@ from typing import (
     List,
     Optional,
     Set,
+    Tuple,
     Union,
 )
 
@@ -20,22 +21,31 @@ from asyncpg.pool import (
     Pool,
 )
 
-import settings
-from core.enums import (
+from databaser.core.enums import (
     ConstraintTypesEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     DBConnectionParameters,
     deep_getattr,
     logger,
     make_chunks,
     make_str_from_iterable,
 )
-from core.repositories import (
+from databaser.core.repositories import (
     SQLRepository,
 )
-from core.strings import (
+from databaser.core.strings import (
     CONNECTION_STR_TEMPLATE,
+)
+from databaser.settings import (
+    EXCLUDED_TABLES,
+    IS_TRUNCATE_TABLES,
+    KEY_COLUMN_NAMES,
+    KEY_TABLE_NAME,
+    TABLES_LIMIT_PER_TRANSACTION,
+    TABLES_TRUNCATE_EXCLUDED,
+    TABLES_TRUNCATE_INCLUDED,
+    TABLES_WITH_GENERIC_FOREIGN_KEY,
 )
 
 
@@ -90,14 +100,12 @@ class BaseDatabase(object):
                 for partition_name_rec in partition_names
             ]
 
-
-
     async def prepare_table_names(self):
         """
         Preparing database table names list
         """
         select_tables_names_list_sql = SQLRepository.get_select_tables_names_list_sql(  # noqa
-            excluded_tables=settings.EXCLUDED_TABLES,
+            excluded_tables=EXCLUDED_TABLES,
         )
 
         async with self._connection_pool.acquire() as connection:
@@ -156,6 +164,7 @@ class BaseDatabase(object):
         DBTable.unique_fk_columns_tables_with_fk_columns_with_key_column.fget.cache_clear()
         DBTable.highest_priority_fk_columns.fget.cache_clear()
 
+
 class SrcDatabase(BaseDatabase):
     """
     Source database
@@ -196,7 +205,7 @@ class DstDatabase(BaseDatabase):
         return list(
             filter(
                 lambda t: (
-                    t.name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+                    t.name not in TABLES_WITH_GENERIC_FOREIGN_KEY
                 ),
                 self.tables.values(),
             )
@@ -273,7 +282,7 @@ class DstDatabase(BaseDatabase):
 
         chunks_table_names = make_chunks(
             iterable=self.table_names,
-            size=settings.TABLES_LIMIT_PER_TRANSACTION,
+            size=TABLES_LIMIT_PER_TRANSACTION,
             is_list=True,
         )
 
@@ -319,26 +328,26 @@ class DstDatabase(BaseDatabase):
         """
         Truncating tables
         """
-        if settings.IS_TRUNCATE_TABLES:
+        if IS_TRUNCATE_TABLES:
             logger.info('start truncating tables..')
 
-            if settings.TABLES_TRUNCATE_INCLUDED:
-                table_names = settings.TABLES_TRUNCATE_INCLUDED
+            if TABLES_TRUNCATE_INCLUDED:
+                table_names = TABLES_TRUNCATE_INCLUDED
             else:
                 table_names = tuple(
                     filter(
                         lambda table_name: (
-                            table_name not in settings.TABLES_WITH_GENERIC_FOREIGN_KEY
+                            table_name not in TABLES_WITH_GENERIC_FOREIGN_KEY
                         ),
                         self.table_names,
                     )
                 )
 
-            if settings.TABLES_TRUNCATE_EXCLUDED:
+            if TABLES_TRUNCATE_EXCLUDED:
                 table_names = tuple(
                     filter(
                         lambda table_name: (
-                            table_name not in settings.TABLES_TRUNCATE_EXCLUDED
+                            table_name not in TABLES_TRUNCATE_EXCLUDED
                         ),
                         table_names,
                     )
@@ -555,7 +564,7 @@ class DBTable(object):
 
     @property
     @lru_cache
-    def fk_columns_tables_with_fk_columns_with_key_column(self) ->List['DBColumn']:
+    def fk_columns_tables_with_fk_columns_with_key_column(self) -> List['DBColumn']:
         """
         Return a list of foreign key columns to tables with foreign key
         columns to table with key columns
@@ -826,8 +835,8 @@ class DBColumn(object):
     @lru_cache()
     def is_key_column(self):
         return (
-            self.name in settings.KEY_COLUMN_NAMES or
-            deep_getattr(self.constraint_table, 'name') == settings.KEY_TABLE_NAME  # noqa
+            self.name in KEY_COLUMN_NAMES or
+            deep_getattr(self.constraint_table, 'name') == KEY_TABLE_NAME  # noqa
         )
 
     @property
