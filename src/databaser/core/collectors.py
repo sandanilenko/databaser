@@ -41,6 +41,7 @@ from databaser.core.repositories import (
 )
 from databaser.settings import (
     EXCLUDED_TABLES,
+    FULL_TRANSFER_TABLES,
     KEY_TABLE_NAME,
     TABLES_WITH_GENERIC_FOREIGN_KEY,
 )
@@ -168,6 +169,66 @@ class KeyTableCollector(BaseCollector):
 
     async def collect(self):
         await self._prepare_key_table_values()
+
+
+class FullTransferCollector(BaseCollector):
+    """
+    Сборщик записей таблиц требующие полного переноса данных
+    """
+
+    async def _prepare_full_transfer_table(self, table: DBTable):
+        """
+        Обработка таблицы с полным переносом записей таблицы
+        """
+        logger.info(
+            f'start preparing full transfer table "{table.name}"'
+        )
+
+        if table.is_ready_for_transferring:
+            return
+
+        need_transfer_pks = await self._get_table_column_values(
+            table=table,
+            column=table.primary_key,
+        )
+
+        table.is_checked = True
+
+        if need_transfer_pks:
+            table.update_need_transfer_pks(
+                need_transfer_pks=need_transfer_pks,
+            )
+
+        del need_transfer_pks
+
+        logger.info(
+            f'finished preparing full transfer table "{table.name}"'
+        )
+
+    async def collect(self):
+        logger.info(
+            'start preparing full transfer tables..'
+        )
+
+        tables = [table for table in self._dst_database.tables.values() if table.name in FULL_TRANSFER_TABLES]
+
+        coroutines = [
+            asyncio.create_task(
+                self._prepare_full_transfer_table(table)
+            )
+            for table in tables
+        ]
+
+        if coroutines:
+            await asyncio.wait(coroutines)
+
+        for table in tables:
+            if table.is_checked:
+                table.is_ready_for_transferring = True
+
+        logger.info(
+            'finished preparing full transfer tables..'
+        )
 
 
 class TablesWithKeyColumnSiblingsCollector(BaseCollector):

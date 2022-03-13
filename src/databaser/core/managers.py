@@ -19,6 +19,7 @@ from asyncpg import (
 
 from databaser.core.collectors import (
     BaseCollector,
+    FullTransferCollector,
     GenericTablesCollector,
     KeyTableCollector,
     SortedByDependencyTablesCollector,
@@ -410,6 +411,7 @@ class CollectorManager:
     """
     collectors_classes: List[Type[BaseCollector]] = [
         KeyTableCollector,
+        FullTransferCollector,
         TablesWithKeyColumnSiblingsCollector,
         SortedByDependencyTablesCollector,
         GenericTablesCollector,
