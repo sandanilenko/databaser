@@ -791,7 +791,7 @@ class SortedByDependencyTablesCollector(BaseCollector):
 
         sorted_tables_by_dependency = without_relatives + sorted_tables_by_dependency
 
-        # явно ломаю асинхронность, т.к. порядок импорта таблиц важен
+        # Явно ломаю асинхронность, т.к. порядок импорта таблиц важен
         for table_name in sorted_tables_by_dependency:
             table = self._dst_database.tables[table_name]
 
