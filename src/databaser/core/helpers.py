@@ -6,6 +6,9 @@ from collections import (
     defaultdict,
     namedtuple,
 )
+from datetime import (
+    datetime,
+)
 from distutils.util import (
     strtobool,
 )
@@ -14,6 +17,7 @@ from itertools import (
     islice,
 )
 from typing import (
+    Any,
     Iterable,
     List,
     Tuple,
@@ -45,10 +49,21 @@ DBConnectionParameters = namedtuple(
 
 
 def make_str_from_iterable(
-    iterable: Iterable,
+    iterable: Iterable[Any],
     with_quotes: bool = False,
     quote: str = '"',
-):
+) -> str:
+    """
+    Вспомогательная функция для преобразования итерируемого объекта к строке
+
+    Args:
+        iterable: итерируемый объект
+        with_quotes: необходимость оборачивания элементов в кавычки
+        quote: вид кавычки
+
+    Returns:
+        Сформированная строка
+    """
     iterable_str = ''
 
     if iterable:
@@ -62,9 +77,9 @@ def make_str_from_iterable(
     return iterable_str
 
 
-def dates_list_to_str(dates_list, format_='%Y-%m-%d %H:%M:%S'):
+def dates_to_string(dates_list: Iterable[datetime], format_: str = '%Y-%m-%d %H:%M:%S'):
     """
-    Converting dates list to string by datetime format
+    Преобразование дат, содержащихся в итерируемом объекте
     """
     return ', '.join(
         map(
@@ -74,6 +89,7 @@ def dates_list_to_str(dates_list, format_='%Y-%m-%d %H:%M:%S'):
     )
 
 
+# Именованный кортеж содержащий результат работы функции топологической сортировки
 Results = namedtuple('Results', ['sorted', 'cyclic'])
 
 
@@ -81,16 +97,17 @@ def topological_sort(
     dependency_pairs: Iterable[Union[str, Tuple[str, str]]],
 ):
     """
-    Sort values subject to dependency constraints
+    Сортировка по степени зависимости
 
     print( topological_sort('aa'.split()) )
     print( topological_sort('ah bg cf ch di ed fb fg hd he ib'.split()) )
 
-    Thanks for Raymond Hettinger
+    Спасибо Raymond Hettinger
     """
     num_heads = defaultdict(int)  # num arrows pointing in
     tails = defaultdict(list)  # list of arrows going out
     heads = []  # unique list of heads in order first seen
+
     for h, t in dependency_pairs:
         num_heads[t] += 1
         if h in tails:
@@ -105,18 +122,24 @@ def topological_sort(
             num_heads[t] -= 1
             if not num_heads[t]:
                 ordered.append(t)
+
     cyclic = [n for n, heads in num_heads.items() if heads]
 
     return Results(ordered, cyclic)
 
 
 def make_chunks(
-    iterable: Iterable,
+    iterable: Iterable[Any],
     size: int,
     is_list: bool = False,
 ):
     """
-    Efficiently split `iterable` into chunks of size `size`.
+    Разделение итерируемого объекта на части указанного в параметрах размера
+
+    Args:
+        iterable: итерируемый объект
+        size: количество объектов в части
+        is_list: преобразовать к спискам формируемые части
     """
     iterator = iter(iterable)
 
@@ -128,19 +151,21 @@ def make_chunks(
         )
 
 
-def deep_getattr(obj, attr, default=None):
+def deep_getattr(object_, attribute_: str, default=None):
     """
     Получить значение атрибута с любого уровня цепочки вложенных объектов.
 
-    :param object obj: объект, у которого ищется значение атрибута
-    :param str attr: атрибут, значение которого необходимо получить (
-        указывается полная цепочка, т.е. 'attr1.attr2.atr3')
-    :param object default: значение по умолчанию
-    :return: значение указанного атрибута или значение по умолчанию, если
+    Args:
+        object_: объект, у которого ищется значение атрибута
+        attribute_: атрибут, значение которого необходимо получить (указывается полная цепочка, т.е. 'attr1.attr2.atr3')
+        default: значение по умолчанию
+
+    Returns:
+        Значение указанного атрибута или значение по умолчанию, если
         атрибут не был найден
     """
     try:
-        value = operator.attrgetter(attr)(obj)
+        value = operator.attrgetter(attribute_)(object_)
     except AttributeError:
         value = default
 
@@ -152,7 +177,14 @@ def get_str_environ_parameter(
     default: str = '',
 ) -> str:
     """
-    Getting string environment variable
+    Получение значения параметра из переменных окружения, имеющего строковое значение
+
+    Args:
+        name: имя переменной окружения
+        default: значение по-умолчанию
+
+    Returns:
+        Полученное значение
     """
     return os.environ.get(name, default).strip()
 
@@ -162,7 +194,14 @@ def get_int_environ_parameter(
     default: int = 0,
 ) -> int:
     """
-    Getting integer environment variable
+    Получение значения параметра из переменных окружения, имеющего целочисленное значение
+
+    Args:
+        name: имя переменной окружения
+        default: значение по-умолчанию
+
+    Returns:
+        Полученное значение
     """
     return int(os.environ.get(name, default))
 
@@ -172,7 +211,14 @@ def get_bool_environ_parameter(
     default: bool = False,
 ) -> bool:
     """
-    Getting boolean environment variable
+    Получение значения параметра из переменных окружения, имеющего булево значение
+
+    Args:
+        name: имя переменной окружения
+        default: значение по-умолчанию
+
+    Returns:
+        Полученное значение
     """
     parameter_value = os.environ.get(name)
 
@@ -190,14 +236,21 @@ def get_iterable_environ_parameter(
     type_=str,
 ) -> Tuple[str]:
     """
-    Getting iterable environment variable as tuple
+    Получение значения параметра из переменных окружения, имеющего строковое значение, преобразованное к кортежу
+
+    Args:
+        name: имя переменной окружения
+        default: кортеж строк
+
+    Returns:
+        Полученное значение
     """
     return tuple(
         map(
             type_,
             filter(
                 None,
-                os.environ.get(name, '').replace(' ', '').split(separator)  # noqa
+                os.environ.get(name, '').replace(' ', '').split(separator)  
             )
         )
     )
@@ -209,14 +262,21 @@ def get_extensible_iterable_environ_parameter(
     type_=str,
 ) -> List[str]:
     """
-    Getting extensible iterable environment variable as list
+    Получение значения параметра из переменных окружения, имеющего строковое значение, преобразованное к списку
+
+    Args:
+        name: имя переменной окружения
+        default: список строк
+
+    Returns:
+        Полученное значение
     """
     return list(
         map(
             type_,
             filter(
                 None,
-                os.environ.get(name, '').replace(' ', '').split(separator)  # noqa
+                os.environ.get(name, '').replace(' ', '').split(separator)  
             )
         )
     )

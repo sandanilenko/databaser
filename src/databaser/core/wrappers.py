@@ -14,6 +14,10 @@ from databaser.core.repositories import (
 
 
 class PostgresFDWExtensionWrapper:
+    """
+    Обертка для работы с расширением FDW Postgres
+    """
+
     def __init__(
         self,
         src_database: SrcDatabase,
@@ -25,6 +29,9 @@ class PostgresFDWExtensionWrapper:
         self._dst_pool = dst_pool
 
     async def enable(self):
+        """
+        Активация FWD и подготовка СУБД для работы с ним
+        """
         create_fdw_extension_sql = SQLRepository.get_create_fdw_extension_sql()
 
         create_server_sql = SQLRepository.get_create_server_sql(
@@ -88,6 +95,9 @@ class PostgresFDWExtensionWrapper:
             )
 
     async def disable(self):
+        """
+        Деактивация плагина FDW
+        """
         drop_temp_src_schema_sql = SQLRepository.get_drop_temp_src_schema_sql()
         drop_user_mapping_sql = SQLRepository.get_drop_user_mapping_sql(
             dst_user=self._dst_database.db_connection_parameters.user,

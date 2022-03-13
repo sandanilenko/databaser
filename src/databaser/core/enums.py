@@ -39,7 +39,7 @@ class DataTypesEnum:
     )
 
 
-class TransferringStagesEnum:
+class StagesEnum:
     PREPARE_DST_DB_STRUCTURE = 1
     TRUNCATE_DST_DB_TABLES = 2
     FILLING_TABLES_ROWS_COUNTS = 3
@@ -51,15 +51,15 @@ class TransferringStagesEnum:
     UPDATE_SEQUENCES = 9
 
     values = {
-        PREPARE_DST_DB_STRUCTURE: "Prepare destination database structure",
-        TRUNCATE_DST_DB_TABLES: "Truncate destination database tables",
-        FILLING_TABLES_ROWS_COUNTS: "Filling tables rows counts",
-        PREPARING_AND_TRANSFERRING_DATA: "Preparing and transferring data",
-        TRANSFER_KEY_TABLE: "Transfer key table",
-        COLLECT_COMMON_TABLES_RECORDS_IDS: "Collect common tables records ids",
-        COLLECT_GENERIC_TABLES_RECORDS_IDS: "Collect generic tables records ids",
-        TRANSFERRING_COLLECTED_DATA: "Transferring collected data",
-        UPDATE_SEQUENCES: "Update sequences",
+        PREPARE_DST_DB_STRUCTURE: 'Prepare destination database structure',
+        TRUNCATE_DST_DB_TABLES: 'Truncate destination database tables',
+        FILLING_TABLES_ROWS_COUNTS: 'Filling tables rows counts',
+        PREPARING_AND_TRANSFERRING_DATA: 'Preparing and transferring data',
+        TRANSFER_KEY_TABLE: 'Transfer key table',
+        COLLECT_COMMON_TABLES_RECORDS_IDS: 'Collect common tables records ids',
+        COLLECT_GENERIC_TABLES_RECORDS_IDS: 'Collect generic tables records ids',
+        TRANSFERRING_COLLECTED_DATA: 'Transferring collected data',
+        UPDATE_SEQUENCES: 'Update sequences',
     }
 
 

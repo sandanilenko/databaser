@@ -19,7 +19,7 @@ from databaser.core.db_entities import (
     SrcDatabase,
 )
 from databaser.core.enums import (
-    TransferringStagesEnum,
+    StagesEnum,
 )
 from databaser.core.helpers import (
     logger,
@@ -155,7 +155,7 @@ class Transporter:
         """
         async with statistic_indexer(
             self._statistic_manager,
-            TransferringStagesEnum.TRANSFERRING_COLLECTED_DATA
+            StagesEnum.TRANSFERRING_COLLECTED_DATA
         ):
             await asyncio.wait(
                 [
@@ -167,7 +167,7 @@ class Transporter:
 
         async with statistic_indexer(
             self._statistic_manager,
-            TransferringStagesEnum.UPDATE_SEQUENCES
+            StagesEnum.UPDATE_SEQUENCES
         ):
             await asyncio.wait(
                 [

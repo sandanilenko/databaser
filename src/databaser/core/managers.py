@@ -30,7 +30,7 @@ from databaser.core.db_entities import (
     SrcDatabase,
 )
 from databaser.core.enums import (
-    TransferringStagesEnum,
+    StagesEnum,
 )
 from databaser.core.helpers import (
     DBConnectionParameters,
@@ -298,7 +298,7 @@ class DatabaserManager:
 
                 async with statistic_indexer(
                     self._statistic_manager,
-                    TransferringStagesEnum.PREPARE_DST_DB_STRUCTURE,
+                    StagesEnum.PREPARE_DST_DB_STRUCTURE,
                 ):
                     await self._dst_database.prepare_structure()
 
@@ -313,7 +313,7 @@ class DatabaserManager:
                 )
                 async with statistic_indexer(
                     self._statistic_manager,
-                    TransferringStagesEnum.TRUNCATE_DST_DB_TABLES,
+                    StagesEnum.TRUNCATE_DST_DB_TABLES,
                 ):
                     await self._dst_database.truncate_tables()
 
@@ -327,7 +327,7 @@ class DatabaserManager:
 
                 async with statistic_indexer(
                     self._statistic_manager,
-                    TransferringStagesEnum.FILLING_TABLES_ROWS_COUNTS,
+                    StagesEnum.FILLING_TABLES_ROWS_COUNTS,
                 ):
                     await self._set_tables_counters()
 
@@ -354,7 +354,7 @@ class DatabaserManager:
 
                 async with statistic_indexer(
                     self._statistic_manager,
-                    TransferringStagesEnum.PREPARING_AND_TRANSFERRING_DATA,
+                    StagesEnum.PREPARING_AND_TRANSFERRING_DATA,
                 ):
                     await asyncio.wait(
                         [
@@ -374,7 +374,7 @@ class DatabaserManager:
                     ]
                 )
 
-                self._statistic_manager.print_transferring_indications()
+                self._statistic_manager.print_stages_indications()
                 self._statistic_manager.print_records_transfer_statistic()
 
                 if TEST_MODE:

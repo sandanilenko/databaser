@@ -24,7 +24,7 @@ from databaser.core.db_entities import (
     SrcDatabase,
 )
 from databaser.core.enums import (
-    TransferringStagesEnum,
+    StagesEnum,
 )
 from databaser.core.helpers import (
     logger,
@@ -959,7 +959,7 @@ class GenericTablesCollector(BaseCollector):
 
         async with statistic_indexer(
             self._statistic_manager,
-            TransferringStagesEnum.COLLECT_GENERIC_TABLES_RECORDS_IDS
+            StagesEnum.COLLECT_GENERIC_TABLES_RECORDS_IDS
         ):
             await asyncio.wait(
                 [
