@@ -105,6 +105,10 @@ TABLES_TRUNCATE_EXCLUDED = get_iterable_environ_parameter(
     name='DATABASER_TABLES_TRUNCATE_EXCLUDED',
 )
 
+FULL_TRANSFER_TABLES = get_iterable_environ_parameter(
+    name='DATABASER_FULL_TRANSFER_TABLES',
+)
+
 if not any(
     [
         SRC_DB_HOST,

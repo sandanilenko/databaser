@@ -455,9 +455,11 @@ class DBTable(object):
     @property
     @lru_cache()
     def primary_key(self):
+        # При обнаружении первичного ключа необходимо исключать поля с типом Дата. Это необходимо, до тех пор, пока не
+        # будет поддержки составных первичных ключей
         primary_keys = list(
             filter(
-                lambda c: ConstraintTypesEnum.PRIMARY_KEY in c.constraint_type,
+                lambda c: ConstraintTypesEnum.PRIMARY_KEY in c.constraint_type and c.data_type != 'date',
                 self.columns.values(),
             )
         )
