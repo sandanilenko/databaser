@@ -19,17 +19,17 @@ from prettytable import (
     PrettyTable,
 )
 
-from core.db_entities import (
+from databaser.core.db_entities import (
     BaseDatabase,
     DBTable,
     DstDatabase,
     SrcDatabase,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     logger,
     make_str_from_iterable,
 )
-from core.loggers import (
+from databaser.core.loggers import (
     StatisticManager,
 )
 

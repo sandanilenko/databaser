@@ -1,10 +1,11 @@
 import logging
 
-from core.enums import (
+from databaser.core.enums import (
     LogLevelEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     get_bool_environ_parameter,
+    get_extensible_iterable_environ_parameter,
     get_int_environ_parameter,
     get_iterable_environ_parameter,
     get_str_environ_parameter,
@@ -82,7 +83,7 @@ KEY_TABLE_HIERARCHY_COLUMN_NAME = get_str_environ_parameter(
     name='DATABASER_KEY_TABLE_HIERARCHY_COLUMN_NAME',
 )
 
-EXCLUDED_TABLES = get_iterable_environ_parameter(
+EXCLUDED_TABLES = get_extensible_iterable_environ_parameter(
     name='DATABASER_EXCLUDED_TABLES',
 )
 TABLES_WITH_GENERIC_FOREIGN_KEY = get_iterable_environ_parameter(

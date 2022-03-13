@@ -6,7 +6,7 @@ RUN apt update \
 
 WORKDIR /srv
 RUN mkdir databaser tmp
-COPY ./databaser /srv/databaser
+COPY ./src /srv/databaser
 
 COPY requirements.txt /srv/tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /srv/tmp/requirements.txt

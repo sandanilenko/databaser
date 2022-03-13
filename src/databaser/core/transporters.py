@@ -12,23 +12,24 @@ from asyncpg import (
     PostgresSyntaxError,
     UndefinedColumnError,
 )
-from core.db_entities import (
+
+from databaser.core.db_entities import (
     DBTable,
     DstDatabase,
     SrcDatabase,
 )
-from core.enums import (
-    TransferringStagesEnum,
+from databaser.core.enums import (
+    StagesEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     logger,
     make_chunks,
 )
-from core.loggers import (
+from databaser.core.loggers import (
     StatisticManager,
     statistic_indexer,
 )
-from core.repositories import (
+from databaser.core.repositories import (
     SQLRepository,
 )
 
@@ -154,7 +155,7 @@ class Transporter:
         """
         async with statistic_indexer(
             self._statistic_manager,
-            TransferringStagesEnum.TRANSFERRING_COLLECTED_DATA
+            StagesEnum.TRANSFERRING_COLLECTED_DATA
         ):
             await asyncio.wait(
                 [
@@ -166,7 +167,7 @@ class Transporter:
 
         async with statistic_indexer(
             self._statistic_manager,
-            TransferringStagesEnum.UPDATE_SEQUENCES
+            StagesEnum.UPDATE_SEQUENCES
         ):
             await asyncio.wait(
                 [

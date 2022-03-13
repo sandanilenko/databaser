@@ -12,20 +12,25 @@ from typing import (
 )
 
 import psutil
-from core.db_entities import (
+
+from databaser.core.db_entities import (
     DBTable,
     DstDatabase,
 )
-from core.enums import (
-    TransferringStagesEnum,
+from databaser.core.enums import (
+    StagesEnum,
 )
-from core.helpers import (
-    dates_list_to_str,
+from databaser.core.helpers import (
+    dates_to_string,
     logger,
 )
 
 
 class StatisticManager:
+    """
+    Менеджер занимающийся сборкой статистики различных этапов сборки и переноса данных
+    """
+
     def __init__(
         self,
         database: DstDatabase,
@@ -37,40 +42,38 @@ class StatisticManager:
 
     def set_indication_time(self, stage):
         """
-        Add stage indication time
-
-        Stage from TransferringStagesEnum
+        Фиксация времени этапа
         """
         self._time_indications[stage].append(datetime.now())
 
     def set_indication_memory(self, stage):
         """
-        Add stage memory usage indication
+        Фиксация используемой оперативной памяти на этапе
         """
         self._memory_usage_indications[stage].append(
             dict(psutil.virtual_memory()._asdict())
         )
 
-    def print_transferring_indications(self):
+    def print_stages_indications(self):
         """
-        Output transferring indications to log
+        Печать показателей этапов работы
         """
-        for stage in TransferringStagesEnum.values.keys():
+        for stage in StagesEnum.values.keys():
             if stage in self._time_indications:
                 logger.info(
-                    f"{TransferringStagesEnum.values.get(stage)} --- "
-                    f"{dates_list_to_str(self._time_indications[stage])}"
+                    f"{StagesEnum.values.get(stage)} --- "
+                    f"{dates_to_string(self._time_indications[stage])}"
                 )
 
             if stage in self._memory_usage_indications:
                 logger.info(
-                    f"{TransferringStagesEnum.values.get(stage)} --- "
+                    f"{StagesEnum.values.get(stage)} --- "
                     f"{self._memory_usage_indications[stage]}"
                 )
 
     def print_records_transfer_statistic(self):
         """
-        Output transferred tables rows count
+        Печать статистики перенесенных записей в целевую базу данных
         """
         tables: Iterable[DBTable] = self._database.tables.values()
         tables_counts = {
@@ -95,7 +98,7 @@ async def statistic_indexer(
     stage: int,
 ):
     """
-    Statistic indexer context manager
+    Контекстный менеджер сбора статистики этапа работы
     """
     statistic_manager.set_indication_time(stage)
     statistic_manager.set_indication_memory(stage)

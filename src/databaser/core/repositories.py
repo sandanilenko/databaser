@@ -8,16 +8,20 @@ from typing import (
     Union,
 )
 
-import settings
-from core.enums import (
+from databaser.core.enums import (
     ConstraintTypesEnum,
     DataTypesEnum,
     LogLevelEnum,
 )
-from core.helpers import (
+from databaser.core.helpers import (
     logger,
     make_chunks,
     make_str_from_iterable,
+)
+from databaser.settings import (
+    KEY_COLUMN_NAMES,
+    LOG_LEVEL,
+    TABLES_LIMIT_PER_TRANSACTION,
 )
 
 
@@ -69,6 +73,14 @@ class SQLRepository:
 
     TRUNCATE_TABLE_SQL_TEMPLATE = """
         truncate {table_names} cascade;
+    """
+
+    SELECT_PARTITION_NAMES_LIST_SQL_TEMPLATE = """
+        select pt.relname
+        from pg_class base_tb
+          join pg_inherits i on i.inhparent = base_tb.oid
+          join pg_class pt on pt.oid = i.inhrelid
+        where pt.relpartbound is not null;
     """
 
     SELECT_TABLES_NAMES_LIST_SQL_TEMPLATE = """
@@ -250,7 +262,7 @@ class SQLRepository:
 
         chunks = make_chunks(
             iterable=table_names,
-            size=settings.TABLES_LIMIT_PER_TRANSACTION,
+            size=TABLES_LIMIT_PER_TRANSACTION,
         )
         for chunk in chunks:
             query = cls.TRUNCATE_TABLE_SQL_TEMPLATE.format(
@@ -263,6 +275,10 @@ class SQLRepository:
             queries.append(query)
 
         return queries
+
+    @classmethod
+    def get_select_partition_names_list_sql(cls):
+        return cls.SELECT_PARTITION_NAMES_LIST_SQL_TEMPLATE
 
     @classmethod
     def get_select_tables_names_list_sql(
@@ -345,7 +361,7 @@ class SQLRepository:
         Метод получения запроса получения идентификаторов таблицы с указанием
         условий
         """
-        if settings.LOG_LEVEL == LogLevelEnum.DEBUG:
+        if LOG_LEVEL == LogLevelEnum.DEBUG:
             logger.debug(
                 f"SQL constraint ids. table name - {table.name}, "
                 f"column_name - {column.name}, "
@@ -374,7 +390,7 @@ class SQLRepository:
             where_conditions = []
 
             for c_name, c_ids in where_conditions_columns.items():
-                if c_name in settings.KEY_COLUMN_NAMES:
+                if c_name in KEY_COLUMN_NAMES:
                     continue
 
                 condition_column = await table.get_column_by_name(c_name)
