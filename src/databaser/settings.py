@@ -4,6 +4,7 @@ from databaser.core.enums import (
     LogLevelEnum,
 )
 from databaser.core.helpers import (
+    add_file_handler_logger,
     get_bool_environ_parameter,
     get_extensible_iterable_environ_parameter,
     get_int_environ_parameter,
@@ -17,7 +18,15 @@ LOG_LEVEL = get_str_environ_parameter(
     name='DATABASER_LOG_LEVEL',
     default=LogLevelEnum.INFO,
 )
+LOG_DIRECTORY = get_str_environ_parameter(
+    name='DATABASER_LOG_DIRECTORY',
+    default=LogLevelEnum.INFO,
+)
+TASK_ID = get_str_environ_parameter(
+    name='DATABASER_BUILD_TASK_ID',
+)
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+add_file_handler_logger(LOG_DIRECTORY, TASK_ID)
 
 # Src database connection params
 SRC_DB_HOST = get_str_environ_parameter(

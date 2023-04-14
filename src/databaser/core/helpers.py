@@ -2,6 +2,7 @@ import logging
 import operator
 import os
 import sys
+import uuid
 from collections import (
     defaultdict,
     namedtuple,
@@ -280,3 +281,22 @@ def get_extensible_iterable_environ_parameter(
             )
         )
     )
+
+
+def add_file_handler_logger(
+    directory_path: str,
+    file_name: str,
+) -> None:
+    """
+    Добавление логирования в файл на диске
+
+    Args:
+        directory_path: полный путь директории с логами
+        file_name: имя файла
+
+    """
+    if directory_path:
+        file_name = f'{file_name}_{uuid.uuid4().hex[:8]}'
+        fh = logging.FileHandler(f"{directory_path}/{file_name}.log")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)

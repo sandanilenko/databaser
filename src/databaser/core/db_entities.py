@@ -259,7 +259,7 @@ class DstDatabase(BaseDatabase):
                 ordinal_position,
                 constraint_table_name,
                 constraint_type,
-            ) in records
+            ) in records if constraint_table_name not in self.partition_names
         ]
 
         if coroutines:
