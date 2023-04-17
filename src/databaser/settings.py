@@ -22,11 +22,11 @@ LOG_DIRECTORY = get_str_environ_parameter(
     name='DATABASER_LOG_DIRECTORY',
     default=LogLevelEnum.INFO,
 )
-TASK_ID = get_str_environ_parameter(
-    name='DATABASER_BUILD_TASK_ID',
+LOG_FILENAME = get_str_environ_parameter(
+    name='DATABASER_LOG_FILENAME',
 )
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
-add_file_handler_logger(LOG_DIRECTORY, TASK_ID)
+add_file_handler_logger(LOG_DIRECTORY, LOG_FILENAME)
 
 # Src database connection params
 SRC_DB_HOST = get_str_environ_parameter(
