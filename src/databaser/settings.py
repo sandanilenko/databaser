@@ -20,7 +20,6 @@ LOG_LEVEL = get_str_environ_parameter(
 )
 LOG_DIRECTORY = get_str_environ_parameter(
     name='DATABASER_LOG_DIRECTORY',
-    default=LogLevelEnum.INFO,
 )
 LOG_FILENAME = get_str_environ_parameter(
     name='DATABASER_LOG_FILENAME',
