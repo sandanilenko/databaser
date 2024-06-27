@@ -1,17 +1,9 @@
-import logging
 
 from databaser.core.enums import (
     LogLevelEnum,
 )
-from databaser.core.helpers import (
-    add_file_handler_logger,
-    get_bool_environ_parameter,
-    get_extensible_iterable_environ_parameter,
-    get_int_environ_parameter,
-    get_iterable_environ_parameter,
-    get_str_environ_parameter,
-    logger,
-)
+from databaser.core.settings_helpers import get_str_environ_parameter, get_bool_environ_parameter, \
+    get_iterable_environ_parameter, get_extensible_iterable_environ_parameter, get_int_environ_parameter
 
 # Logger
 LOG_LEVEL = get_str_environ_parameter(
@@ -24,8 +16,7 @@ LOG_DIRECTORY = get_str_environ_parameter(
 LOG_FILENAME = get_str_environ_parameter(
     name='DATABASER_LOG_FILENAME',
 )
-logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
-add_file_handler_logger(LOG_DIRECTORY, LOG_FILENAME)
+
 
 # Src database connection params
 SRC_DB_HOST = get_str_environ_parameter(
@@ -73,9 +64,6 @@ DST_DB_PASSWORD = get_str_environ_parameter(
 TEST_MODE = get_bool_environ_parameter(
     name='DATABASER_TEST_MODE',
 )
-
-if TEST_MODE:
-    logger.warning('TEST MODE ACTIVATED!!!')
 
 KEY_TABLE_NAME = get_str_environ_parameter(
     name='DATABASER_KEY_TABLE_NAME',
@@ -138,4 +126,16 @@ if not any(
 
 VALIDATE_DATA_BEFORE_TRANSFERRING = get_bool_environ_parameter(
     name='VALIDATE_DATA_BEFORE_TRANSFERRING',
+)
+
+USE_DATABASE_FOR_STORE_INTERMEDIATE_VALUES = get_bool_environ_parameter(
+    name='DATABASER_USE_DATABASE_FOR_STORE_INTERMEDIATE_VALUES'
+)
+
+COLLECTOR_CHUNK_SIZE = get_int_environ_parameter(
+    name='DATABASER_COLLECTOR_CHUNK_SIZE', default=60000
+)
+
+ASYNC_SEPARATION_COEFFICIENT = get_int_environ_parameter(
+    name='DATABASER_ASYNC_SEPARATION_COEFFICIENT', default=-1
 )

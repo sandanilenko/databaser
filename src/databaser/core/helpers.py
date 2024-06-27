@@ -1,6 +1,6 @@
+import asyncio
 import logging
 import operator
-import os
 import sys
 import uuid
 from collections import (
@@ -10,9 +10,6 @@ from collections import (
 from datetime import (
     datetime,
 )
-from distutils.util import (
-    strtobool,
-)
 from itertools import (
     chain,
     islice,
@@ -20,33 +17,11 @@ from itertools import (
 from typing import (
     Any,
     Iterable,
-    List,
     Tuple,
-    Union,
+    Union, Callable, TypeVar, Coroutine, AsyncIterable,
 )
 
-logger = logging.getLogger('asyncio')
-
-sh = logging.StreamHandler(
-    stream=sys.stdout,
-)
-
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-
-sh.setFormatter(formatter)
-logger.addHandler(sh)
-
-DBConnectionParameters = namedtuple(
-    typename='DBConnectionParameters',
-    field_names=[
-        'host',
-        'port',
-        'schema',
-        'dbname',
-        'user',
-        'password',
-    ],
-)
+from databaser.settings import ASYNC_SEPARATION_COEFFICIENT, LOG_LEVEL, LOG_DIRECTORY, LOG_FILENAME, TEST_MODE
 
 
 def make_str_from_iterable(
@@ -88,10 +63,6 @@ def dates_to_string(dates_list: Iterable[datetime], format_: str = '%Y-%m-%d %H:
             dates_list
         )
     )
-
-
-# Именованный кортеж содержащий результат работы функции топологической сортировки
-Results = namedtuple('Results', ['sorted', 'cyclic'])
 
 
 def topological_sort(
@@ -152,6 +123,56 @@ def make_chunks(
         )
 
 
+T = TypeVar('T')
+
+
+async def execute_async_function_for_collection(fun: Callable[[T], Coroutine], args: Iterable[T]):
+    """
+    Позволяет запустить асинхронную функцию одновременно для нескольких элементов.
+    Количество одновременных выполнений задаётся через настройки
+
+    Args:
+        fun: Функция, которую необходимо применить к элементам объекта
+        args: Итерируемый объект
+    """
+
+    if ASYNC_SEPARATION_COEFFICIENT <= 0:
+        chunks = [args]
+    else:
+        chunks = make_chunks(args, ASYNC_SEPARATION_COEFFICIENT)
+
+    for chunk in chunks:
+        coroutines = [
+            asyncio.create_task(fun(i))
+            for i in chunk
+        ]
+
+        if coroutines:
+            await asyncio.wait(coroutines)
+
+
+async def execute_async_function_for_async_collection(fun: Callable[[T], Coroutine], args: AsyncIterable[T]):
+    """
+    Позволяет запустить асинхронную функцию одновременно для нескольких элементов.
+    Количество одновременных выполнений задаётся через настройки
+    В отличие от execute_async_function_for_collection элементы могут быть в асинхронной коллекции
+
+    Args:
+        fun: Функция, которую необходимо применить к элементам объекта
+        args: Асинхронноитерируемый объект
+    """
+
+    coroutines = []
+    async for i in args:
+        coroutines.append(asyncio.create_task(fun(i)))
+        if 0 < ASYNC_SEPARATION_COEFFICIENT <= len(coroutines):
+            await asyncio.wait(coroutines)
+            coroutines = []
+
+    if coroutines:
+        await asyncio.wait(coroutines)
+
+
 def deep_getattr(object_, attribute_: str, default=None):
     """
     Получить значение атрибута с любого уровня цепочки вложенных объектов.
@@ -173,116 +194,6 @@ def deep_getattr(object_, attribute_: str, default=None):
     return value
 
 
-def get_str_environ_parameter(
-    name: str,
-    default: str = '',
-) -> str:
-    """
-    Получение значения параметра из переменных окружения, имеющего строковое значение
-
-    Args:
-        name: имя переменной окружения
-        default: значение по-умолчанию
-
-    Returns:
-        Полученное значение
-    """
-    return os.environ.get(name, default).strip()
-
-
-def get_int_environ_parameter(
-    name: str,
-    default: int = 0,
-) -> int:
-    """
-    Получение значения параметра из переменных окружения, имеющего целочисленное значение
-
-    Args:
-        name: имя переменной окружения
-        default: значение по-умолчанию
-
-    Returns:
-        Полученное значение
-    """
-    return int(os.environ.get(name, default))
-
-
-def get_bool_environ_parameter(
-    name: str,
-    default: bool = False,
-) -> bool:
-    """
-    Получение значения параметра из переменных окружения, имеющего булево значение
-
-    Args:
-        name: имя переменной окружения
-        default: значение по-умолчанию
-
-    Returns:
-        Полученное значение
-    """
-    parameter_value = os.environ.get(name)
-
-    if parameter_value:
-        parameter_value = bool(strtobool(parameter_value))
-    else:
-        parameter_value = default
-
-    return parameter_value
-
-
-def get_iterable_environ_parameter(
-    name: str,
-    separator: str = ',',
-    type_=str,
-) -> Tuple[str]:
-    """
-    Получение значения параметра из переменных окружения, имеющего строковое значение, преобразованное к кортежу
-
-    Args:
-        name: имя переменной окружения
-        default: кортеж строк
-
-    Returns:
-        Полученное значение
-    """
-    return tuple(
-        map(
-            type_,
-            filter(
-                None,
-                os.environ.get(name, '').replace(' ', '').split(separator)  
-            )
-        )
-    )
-
-
-def get_extensible_iterable_environ_parameter(
-    name: str,
-    separator: str = ',',
-    type_=str,
-) -> List[str]:
-    """
-    Получение значения параметра из переменных окружения, имеющего строковое значение, преобразованное к списку
-
-    Args:
-        name: имя переменной окружения
-        default: список строк
-
-    Returns:
-        Полученное значение
-    """
-    return list(
-        map(
-            type_,
-            filter(
-                None,
-                os.environ.get(name, '').replace(' ', '').split(separator)  
-            )
-        )
-    )
-
-
 def add_file_handler_logger(
     directory_path: str,
     file_name: str,
@@ -300,3 +211,35 @@ def add_file_handler_logger(
         fh = logging.FileHandler(f"{directory_path}/{file_name}.log")
         fh.setFormatter(formatter)
         logger.addHandler(fh)
+
+
+logger = logging.getLogger('asyncio')
+
+sh = logging.StreamHandler(
+    stream=sys.stdout,
+)
+
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+sh.setFormatter(formatter)
+logger.addHandler(sh)
+
+DBConnectionParameters = namedtuple(
+    typename='DBConnectionParameters',
+    field_names=[
+        'host',
+        'port',
+        'schema',
+        'dbname',
+        'user',
+        'password',
+    ],
+)
+logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+add_file_handler_logger(LOG_DIRECTORY, LOG_FILENAME)
+
+if TEST_MODE:
+    logger.warning('TEST MODE ACTIVATED!!!')
+
+# Именованный кортеж содержащий результат работы функции топологической сортировки
+Results = namedtuple('Results', ['sorted', 'cyclic'])

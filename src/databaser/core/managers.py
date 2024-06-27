@@ -36,7 +36,7 @@ from databaser.core.enums import (
 from databaser.core.helpers import (
     DBConnectionParameters,
     logger,
-    make_str_from_iterable,
+    make_str_from_iterable, execute_async_function_for_collection,
 )
 from databaser.core.loggers import (
     StatisticManager,
@@ -45,6 +45,7 @@ from databaser.core.loggers import (
 from databaser.core.repositories import (
     SQLRepository,
 )
+from databaser.core.storages import StorageDataTable
 from databaser.core.transporters import (
     Transporter,
 )
@@ -71,7 +72,7 @@ from databaser.settings import (
     SRC_DB_PORT,
     SRC_DB_SCHEMA,
     SRC_DB_USER,
-    TEST_MODE,
+    TEST_MODE, USE_DATABASE_FOR_STORE_INTERMEDIATE_VALUES,
 )
 
 
@@ -163,8 +164,9 @@ class DatabaserManager:
 
     async def _build_key_column_values_hierarchical_structure(self):
         """
-        Building tree of hierarchy key table records by parent_id column
+        Построение дерева иерархии записей ключвой таблицы по parent_id столбцу
         """
+
         logger.info("build tree of enterprises for transfer process")
 
         key_table: DBTable = self._dst_database.tables.get(KEY_TABLE_NAME)
@@ -173,18 +175,12 @@ class DatabaserManager:
         )
 
         if hierarchy_column:
-            coroutines = [
-                asyncio.create_task(
-                    self._get_key_table_parents_values(
-                        key_table_primary_key_name=key_table.primary_key.name,
-                        key_table_primary_key_value=key_column_value,
-                    )
+            async def partial_getting(value: int):
+                await self._get_key_table_parents_values(
+                    key_table_primary_key_name=key_table.primary_key.name,
+                    key_table_primary_key_value=value
                 )
-                for key_column_value in copy(self._key_column_values)
-            ]
-
-            if coroutines:
-                await asyncio.wait(coroutines)
+            await execute_async_function_for_collection(partial_getting, copy(self._key_column_values))
 
         logger.info(
             f"transferring enterprises - "
@@ -193,11 +189,13 @@ class DatabaserManager:
 
     async def _set_table_counters(self, table_name: str):
         """
-        Filling table max pk and count of records
+        Заполнение максимального pk и количество записей
         """
+
         async with self._src_database.connection_pool.acquire() as connection:
             table = self._dst_database.tables[table_name]
-
+            if table.primary_key is None:
+                raise UndefinedFunctionError
             try:
                 count_table_records_sql = (
                     SQLRepository.get_count_table_records(
@@ -250,8 +248,9 @@ class DatabaserManager:
 
     async def _main(self):
         """
-        Run async databaser
+        Запуск асинхронного Databaser
         """
+
         async with asyncpg.create_pool(
             self._dst_database.connection_str,
             min_size=30,
@@ -265,6 +264,9 @@ class DatabaserManager:
                 self._src_database.connection_pool = src_pool
                 self._dst_database.connection_pool = dst_pool
 
+                if USE_DATABASE_FOR_STORE_INTERMEDIATE_VALUES:
+                    await StorageDataTable.init_table(self._dst_database)
+
                 await self._src_database.prepare_table_names()
 
                 logger.info(
@@ -277,21 +279,9 @@ class DatabaserManager:
                     dst_database=self._dst_database,
                     dst_pool=dst_pool,
                 )
-                await asyncio.wait(
-                    [
-                        asyncio.create_task(
-                            fdw_wrapper.disable()
-                        ),
-                    ]
-                )
+                await fdw_wrapper.disable()
 
-                await asyncio.wait(
-                    [
-                        asyncio.create_task(
-                            self._dst_database.prepare_partition_names()
-                        ),
-                    ]
-                )
+                await self._dst_database.prepare_partition_names()
 
                 if self._dst_database.partition_names:
                     logger.info(f'dst_database partitions - {", ".join(self._dst_database.partition_names)}')
@@ -305,26 +295,15 @@ class DatabaserManager:
 
                 await self._dst_database.disable_triggers()
 
-                await asyncio.wait(
-                    [
-                        asyncio.create_task(
-                            self._build_key_column_values_hierarchical_structure()  # noqa
-                        ),
-                    ]
-                )
+                await self._build_key_column_values_hierarchical_structure()  # noqa
+
                 async with statistic_indexer(
                     self._statistic_manager,
                     StagesEnum.TRUNCATE_DST_DB_TABLES,
                 ):
                     await self._dst_database.truncate_tables()
 
-                await asyncio.wait(
-                    [
-                        asyncio.create_task(
-                            fdw_wrapper.enable()
-                        ),
-                    ]
-                )
+                await fdw_wrapper.enable()
 
                 async with statistic_indexer(
                     self._statistic_manager,
@@ -338,13 +317,8 @@ class DatabaserManager:
                     statistic_manager=self._statistic_manager,
                     key_column_values=self._key_column_values,
                 )
-                await asyncio.wait(
-                    [
-                        asyncio.create_task(
-                            collector_manager.manage()
-                        ),
-                    ]
-                )
+
+                await collector_manager.manage()
 
                 transporter = Transporter(
                     dst_database=self._dst_database,
@@ -357,26 +331,17 @@ class DatabaserManager:
                     self._statistic_manager,
                     StagesEnum.PREPARING_AND_TRANSFERRING_DATA,
                 ):
-                    await asyncio.wait(
-                        [
-                            asyncio.create_task(
-                                transporter.transfer()
-                            ),
-                        ]
-                    )
+                    await transporter.transfer()
 
                 await self._dst_database.enable_triggers()
 
-                await asyncio.wait(
-                    [
-                        asyncio.create_task(
-                            fdw_wrapper.disable()
-                        ),
-                    ]
-                )
+                await fdw_wrapper.disable()
 
                 self._statistic_manager.print_stages_indications()
-                self._statistic_manager.print_records_transfer_statistic()
+                await self._statistic_manager.print_records_transfer_statistic()
+
+                if USE_DATABASE_FOR_STORE_INTERMEDIATE_VALUES:
+                    await StorageDataTable.drop_table()
 
                 if TEST_MODE:
                     validator_manager = ValidatorManager(

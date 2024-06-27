@@ -12,11 +12,10 @@ from typing import (
     List,
     Optional,
     Set,
-    Tuple,
-    Union,
+    Union, AsyncIterator,
 )
 
-import asyncpg
+from asyncpg import CannotConnectNowError, ConnectionDoesNotExistError
 from asyncpg.pool import (
     Pool,
 )
@@ -29,11 +28,12 @@ from databaser.core.helpers import (
     deep_getattr,
     logger,
     make_chunks,
-    make_str_from_iterable,
+    make_str_from_iterable, execute_async_function_for_collection,
 )
 from databaser.core.repositories import (
     SQLRepository,
 )
+from databaser.core.storages import create_storage, AbstractStorage
 from databaser.core.strings import (
     CONNECTION_STR_TEMPLATE,
 )
@@ -86,11 +86,12 @@ class BaseDatabase(object):
 
     async def prepare_partition_names(self):
         """
-        Prepare partitions for exclude their from transferring tables data
+        Расчёт названий партиций
         """
+
         select_partition_names_list_sql = SQLRepository.get_select_partition_names_list_sql()
 
-        async with self._connection_pool.acquire() as connection:
+        async with self.connection_pool.acquire() as connection:
             partition_names = await connection.fetch(
                 query=select_partition_names_list_sql,
             )
@@ -102,20 +103,21 @@ class BaseDatabase(object):
 
     async def prepare_table_names(self):
         """
-        Preparing database table names list
+        Подготовка названий таблиц
         """
+
         select_tables_names_list_sql = SQLRepository.get_select_tables_names_list_sql(  # noqa
             excluded_tables=EXCLUDED_TABLES,
         )
 
-        async with self._connection_pool.acquire() as connection:
+        async with self.connection_pool.acquire() as connection:
             table_names = await connection.fetch(
                 query=select_tables_names_list_sql,
             )
 
             self.table_names = [
                 table_name_rec[0]
-                for table_name_rec in table_names
+                for table_name_rec in table_names if table_name_rec[0] != 'storage_data'
             ]
 
     async def execute_raw_sql(
@@ -123,33 +125,85 @@ class BaseDatabase(object):
         raw_sql: str,
     ):
         """
-        Async executing raw sql
-        """
-        connection = await asyncpg.connect(self.connection_str)
+        Асинхронное выполнение sql запроса
 
-        try:
-            await connection.execute(raw_sql)
-        finally:
-            del raw_sql
-            await connection.close()
+        Args:
+            raw_sql: sql запрос
+        Raise:
+            CannotConnectNowError, если выполнить запрос не удалось
+        """
+
+        for _ in range(10):
+            try:
+                async with self.connection_pool.acquire() as connection:
+                    await connection.execute(raw_sql, timeout=240)
+                    break
+            except (CannotConnectNowError, asyncio.TimeoutError, ConnectionDoesNotExistError):
+                await asyncio.sleep(20)
+        else:
+            raise CannotConnectNowError
 
     async def fetch_raw_sql(
         self,
         raw_sql: str,
     ):
         """
-        Async executing raw sql with fetching result
+        Асинхронное выполнение sql запроса с получением результата
+
+        Args:
+            raw_sql: sql запрос
+        Returns:
+            Результат выполнения sql запроса
+        Raise:
+            CannotConnectNowError, если получить данные не удалось в течении 10 попыток
         """
-        connection = await asyncpg.connect(self.connection_str)
 
-        try:
-            result = await connection.fetch(raw_sql)
-        finally:
-            await connection.close()
-
-        del raw_sql
+        for _ in range(10):
+            try:
+                async with self.connection_pool.acquire() as connection:
+                    result = await connection.fetch(raw_sql, timeout=240)
+                    break
+            except (CannotConnectNowError, asyncio.TimeoutError, ConnectionDoesNotExistError):
+                await asyncio.sleep(20)
+        else:
+            raise CannotConnectNowError
 
         return result
+
+    def get_iter(self, sql: str, chunk_size: int) -> AsyncIterator[List[str]]:
+        """
+            Возвращает асинхронный итератор для итерации по результату sql запроса.
+            На каждом шаге возвращается список записей размером chunk_size.
+
+            Args:
+                sql: sql запрос
+                chunk_size: Размер одного шага итерации
+            Returns:
+                асинхронный итератор по результатам выполнения sql запроса
+        """
+
+        step = 0
+        limit_offset_sql_template = """{sql} LIMIT {limit} OFFSET {offset};"""
+
+        async def iterator():
+            nonlocal step
+
+            while True:
+                step_sql = limit_offset_sql_template.format(
+                    sql=sql.replace(';', ''),
+                    limit=chunk_size,
+                    offset=chunk_size * step
+                )
+                data = await self.fetch_raw_sql(step_sql)
+                if not data:
+                    break
+                data = [i[0] for i in data]
+                yield data
+                if len(data) < chunk_size:
+                    break
+                step += 1
+
+        return iterator()
 
     def clear_cache(self):
         """
@@ -229,8 +283,12 @@ class DstDatabase(BaseDatabase):
         chunk_table_names: Iterable[str],
     ):
         """
-        Preparing tables of chunk table names
+        Подготавливает информацию по указанным таблицам
+
+        Args:
+            chunk_table_names: набор названий таблиц
         """
+
         getting_tables_columns_sql = SQLRepository.get_table_columns_sql(
             table_names=make_str_from_iterable(
                 iterable=chunk_table_names,
@@ -239,7 +297,7 @@ class DstDatabase(BaseDatabase):
             ),
         )
 
-        async with self._connection_pool.acquire() as connection:
+        async with self.connection_pool.acquire() as connection:
             records = await connection.fetch(
                 query=getting_tables_columns_sql,
             )
@@ -269,8 +327,9 @@ class DstDatabase(BaseDatabase):
 
     async def prepare_tables(self):
         """
-        Prepare tables structure for transferring data process
+        Подготавливает информацию по таблицам
         """
+
         logger.info('prepare tables structure for transferring process')
 
         self.tables = {
@@ -303,16 +362,13 @@ class DstDatabase(BaseDatabase):
 
     async def set_max_tables_sequences(self):
         """
-        Setting max table sequence value as max(id) + 1
+        Устанавливает последнее число последовательностей в таблицах
         """
-        coroutines = [
-            asyncio.create_task(
-                table.set_max_sequence(self._connection_pool)
-            )
-            for table in self.tables.values()
-        ]
 
-        await asyncio.wait(coroutines)
+        async def partial_setting(table: DBTable):
+            await table.set_max_sequence(self._connection_pool)
+
+        await execute_async_function_for_collection(partial_setting, self.tables.values())
 
     async def prepare_structure(self):
         """
@@ -430,7 +486,7 @@ class DBTable(object):
         )
 
         # Pks of table for transferring
-        self.need_transfer_pks = set()
+        self.need_transfer_pks = create_storage()
 
         self.transferred_pks_count = 0
 
@@ -440,7 +496,6 @@ class DBTable(object):
             f'@with_fk="{self.with_fk}" '
             f'@with_key_column="{self.with_key_column}" '
             f'@with_self_fk="{self.with_self_fk}" '
-            f'@need_transfer_pks_count="{len(self.need_transfer_pks)}" >'
         )
 
     def __str__(self):
@@ -478,17 +533,26 @@ class DBTable(object):
     def is_ready_for_transferring(self, is_ready_for_transferring):
         self._is_ready_for_transferring = is_ready_for_transferring
 
-    @property
-    def is_full_prepared(self):
+    async def is_full_prepared(self) -> bool:
+        """
+        Проверяет готова ли таблица к копированию данных
+
+        Returns:
+            True, если таблица готова к переносу, иначе False
+        """
+
+        need_transfer_pks_len = await self.need_transfer_pks.len()
         logger.debug(
             f'table - {self.name} -- count table records {self.full_count} and '
-            f'need transfer pks {len(self.need_transfer_pks)}'
+            f'need transfer pks {need_transfer_pks_len}'
         )
 
-        if len(self.need_transfer_pks) >= self.full_count - self.inaccuracy_count:  # noqa
-            logger.info(f'table {self.name} full transferred')
+        if need_transfer_pks_len >= self.full_count - self.inaccuracy_count:  # noqa
+            logger.info(f'table {self.name} full prepared')
 
             return True
+
+        return False
 
     @property
     @lru_cache()
@@ -630,16 +694,21 @@ class DBTable(object):
 
         return fk_columns
 
-    def update_need_transfer_pks(
+    async def update_need_transfer_pks(
         self,
-        need_transfer_pks: Iterable[Union[int, str]],
+        need_transfer_pks: Union[Iterable[Union[int, str]], 'AbstractStorage'],
     ):
         """
-        Updating table need transfer pks
-        """
-        self.need_transfer_pks.update(need_transfer_pks)
+            Добавляет записи в список данных для переноса
 
-        del need_transfer_pks
+            Args:
+                need_transfer_pks: Данные для добавления
+        """
+
+        if isinstance(need_transfer_pks, AbstractStorage):
+            await self.need_transfer_pks.add_storage_data(need_transfer_pks)
+        else:
+            await self.need_transfer_pks.insert(need_transfer_pks)
 
     async def append_column(
         self,
@@ -659,7 +728,7 @@ class DBTable(object):
                     column.constraint_table = constraint_table
                     DBColumn.is_foreign_key.fget.cache_clear()
         else:
-            # postgresql возврщает тип array вместо integer array
+            # postgresql возвращает тип array вместо integer array
             if data_type == 'ARRAY':
                 data_type = 'integer array'
 

@@ -71,13 +71,13 @@ class StatisticManager:
                     f"{self._memory_usage_indications[stage]}"
                 )
 
-    def print_records_transfer_statistic(self):
+    async def print_records_transfer_statistic(self):
         """
         Печать статистики перенесенных записей в целевую базу данных
         """
         tables: Iterable[DBTable] = self._database.tables.values()
         tables_counts = {
-            table.name: (table.transferred_pks_count, len(table.need_transfer_pks))
+            table.name: (table.transferred_pks_count, await table.need_transfer_pks.len())
             for table in tables
         }
 

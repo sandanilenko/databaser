@@ -30,8 +30,9 @@ class PostgresFDWExtensionWrapper:
 
     async def enable(self):
         """
-        Активация FWD и подготовка СУБД для работы с ним
+        Активация FDW и подготовка СУБД для работы с ним
         """
+        
         create_fdw_extension_sql = SQLRepository.get_create_fdw_extension_sql()
 
         create_server_sql = SQLRepository.get_create_server_sql(

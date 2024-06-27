@@ -1,4 +1,3 @@
-import asyncio
 from typing import (
     List,
     Set,
@@ -23,7 +22,7 @@ from databaser.core.enums import (
 )
 from databaser.core.helpers import (
     logger,
-    make_chunks,
+    execute_async_function_for_collection,
 )
 from databaser.core.loggers import (
     StatisticManager,
@@ -39,7 +38,6 @@ class Transporter:
     Класс комплексной транспортировки, который использует принципы обхода по
     внешним ключам и по таблицам с обратной связью
     """
-    CHUNK_SIZE = 70000
 
     def __init__(
         self,
@@ -59,21 +57,23 @@ class Transporter:
 
         self.content_type_table = {}
 
-    async def _transfer_table_data(self, table):
+    async def _transfer_table_data(self, table: DBTable):
         """
         Перенос данных таблицы
+
+        Args:
+            table: Таблица для переноса
         """
+
         logger.info(
             f"start transferring table \"{table.name}\", "
-            f"need to import - {len(table.need_transfer_pks)}"
+            f"need to import - {await table.need_transfer_pks.len()}"
         )
+        if table.primary_key is None:
+            logger.warning(f"table {table.name} has no primary key")
+            return
 
-        need_import_ids_chunks = make_chunks(
-            iterable=table.need_transfer_pks,
-            size=self.CHUNK_SIZE,
-        )
-
-        for need_import_ids_chunk in need_import_ids_chunks:
+        async for need_import_ids_chunk in table.need_transfer_pks:
             await self._transfer_chunk_table_data(
                 table=table,
                 need_import_ids_chunk=need_import_ids_chunk,
@@ -90,7 +90,12 @@ class Transporter:
     ):
         """
         Порционный перенос данных таблицы в целевую БД
+
+        Args:
+            table: Таблица для переноса
+            need_import_ids_chunk: Часть id строк для переноса
         """
+
         transfer_sql = SQLRepository.get_transfer_records_sql(
             table=table,
             connection_params_str=self._src_database.connection_str,
@@ -99,45 +104,34 @@ class Transporter:
 
         logger.info(f'transfer chunk table data - "{table.name}"')
 
-        transferred_ids = None
-        async with self._dst_database.connection_pool.acquire() as connection:
-            try:
-                transferred_ids = await connection.fetch(transfer_sql)
-            except (
-                UndefinedColumnError,
-                NotNullViolationError,
-                PostgresSyntaxError,
-                NumericValueOutOfRangeError,
-            ) as e:
-                raise PostgresError(
-                    f'{str(e)}, table - {table.name}, '
-                    f'sql - {transfer_sql} --- _transfer_chunk_table_data'
-                )
+        try:
+            transferred_ids = await self._dst_database.fetch_raw_sql(transfer_sql)
+        except (
+            UndefinedColumnError,
+            NotNullViolationError,
+            PostgresSyntaxError,
+            NumericValueOutOfRangeError,
+        ) as e:
+            raise PostgresError(
+                f'{str(e)}, table - {table.name}, '
+                f'sql - {transfer_sql} --- _transfer_chunk_table_data'
+            )
 
         if transferred_ids:
             table.transferred_pks_count += len(transferred_ids)
-
-        del transfer_sql
-        del transferred_ids
 
     async def _transfer_collecting_data(self):
         """
         Физический импорт данных в целевую БД из БД-донора
         """
+
         logger.info("start transferring data to target db...")
 
-        need_imported_tables = filter(
-            lambda table: table.need_transfer_pks,
-            self._dst_database.tables.values(),
-        )
-
-        coroutines = [
-            self._transfer_table_data(table)
-            for table in need_imported_tables
+        need_imported_tables = [
+            table for table in self._dst_database.tables.values() if await table.need_transfer_pks.is_not_empty()
         ]
 
-        if coroutines:
-            await asyncio.gather(*coroutines)
+        await execute_async_function_for_collection(self._transfer_table_data, need_imported_tables)
 
         logger.info("finished transferring data to target db!")
 
@@ -145,6 +139,7 @@ class Transporter:
         """
         Обновление значений счетчиков на макситальные
         """
+
         logger.info("start updating sequences...")
         await self._dst_database.set_max_tables_sequences()
         logger.info("finished updating sequences!")
@@ -153,26 +148,15 @@ class Transporter:
         """
         Переносит данный из БД донора в БД приемник
         """
+
         async with statistic_indexer(
             self._statistic_manager,
             StagesEnum.TRANSFERRING_COLLECTED_DATA
         ):
-            await asyncio.wait(
-                [
-                    asyncio.create_task(
-                        self._transfer_collecting_data()
-                    ),
-                ]
-            )
+            await  self._transfer_collecting_data()
 
         async with statistic_indexer(
             self._statistic_manager,
             StagesEnum.UPDATE_SEQUENCES
         ):
-            await asyncio.wait(
-                [
-                    asyncio.create_task(
-                        self._update_sequences()
-                    ),
-                ]
-            )
+            await self._update_sequences()
