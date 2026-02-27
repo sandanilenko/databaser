@@ -68,112 +68,102 @@ class SQLRepository:
         """
 
     TRUNCATE_TABLE_SQL_TEMPLATE = """
-        truncate {table_names} cascade;
+        TRUNCATE {table_names} CASCADE;
     """
 
     SELECT_PARTITION_NAMES_LIST_SQL_TEMPLATE = """
-        select pt.relname
-        from pg_class base_tb
-          join pg_inherits i on i.inhparent = base_tb.oid
-          join pg_class pt on pt.oid = i.inhrelid
-        where pt.relpartbound is not null;
+        SELECT pt.relname
+        FROM pg_class base_tb
+            JOIN pg_inherits i 
+                ON i.inhparent = base_tb.oid
+            JOIN pg_class pt 
+                ON pt.oid = i.inhrelid
+        WHERE pt.relpartbound IS NOT NULL;
     """
 
-    SELECT_TABLES_NAMES_LIST_SQL_TEMPLATE = r"""
-        select table_name
-        from information_schema.tables
-        where table_schema='public' and
-              table_name not in ({excluded_tables}) and
-              table_name not like '\_%';
+    SELECT_TABLES_NAMES_LIST_SQL_TEMPLATE = """
+        SELECT t.table_name
+        FROM information_schema.tables t
+        WHERE 
+            t.table_schema = 'public' 
+            AND t.table_type = 'BASE TABLE' 
+            AND t.table_name NOT IN ({excluded_tables}) 
+            AND t.table_name NOT LIKE '\_%';
     """
 
     SELECT_TABLE_FIELDS_SQL = """
-        with tc as (
-            select table_name,
-                   constraint_type,
-                   constraint_name
-            from information_schema.table_constraints
-            where table_name in ({table_names})
-        )
-        select clmns.table_name,
-            clmns.column_name,
-            clmns.data_type,
-            clmns.ordinal_position,
-            constraints.constraint_table_name,
-            constraints.constraint_type
-        from (
-            select table_name,
-                   column_name,
-                   data_type,
-                   ordinal_position
-            from information_schema.columns
-            where table_name in ({table_names})
-        ) as clmns
-        left join (
-            select
-                tc1.constraint_type,
-                tc1.table_name,
-                kcu.column_name,
-                ccu.table_name as constraint_table_name
-            from
-            (
-                select * from tc
-            ) as tc1
-            join (
-                select constraint_name,
-                       column_name
-                from information_schema.key_column_usage
-            ) as kcu on tc1.constraint_name = kcu.constraint_name
-            join (
-                select constraint_name,
-                       table_name
-                from information_schema.constraint_column_usage
-            ) as ccu on ccu.constraint_name = tc1.constraint_name
-            where tc1.table_name in ({table_names}) and (
-                tc1.constraint_type in ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE') or
-                tc1.constraint_type isnull
-            )
-        ) as constraints on (
-            constraints.table_name = clmns.table_name and
-            constraints.column_name = clmns.column_name
-        );
+        SELECT 
+            col.table_name,
+            col.column_name,
+            col.data_type,
+            col.ordinal_position,
+            COALESCE(constr_col_usage.table_name, constr_col_usage_fk.table_name) AS constraint_table_name,
+            constr.constraint_type
+        FROM information_schema.columns col
+            LEFT JOIN information_schema.key_column_usage key_col_usage
+                ON key_col_usage.table_catalog = col.table_catalog
+                AND key_col_usage.table_schema = col.table_schema
+                AND key_col_usage.table_name = col.table_name
+                AND key_col_usage.column_name = col.column_name
+            LEFT JOIN information_schema.table_constraints constr
+                ON constr.table_catalog = key_col_usage.table_catalog
+                AND constr.table_schema = key_col_usage.table_schema
+                AND constr.table_name = key_col_usage.table_name
+                AND constr.constraint_catalog = key_col_usage.constraint_catalog
+                AND constr.constraint_schema = key_col_usage.constraint_schema
+                AND constr.constraint_name = key_col_usage.constraint_name
+                AND constr.constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY')
+            LEFT JOIN information_schema.constraint_column_usage constr_col_usage
+                ON constr_col_usage.constraint_catalog = key_col_usage.constraint_catalog
+                AND constr_col_usage.constraint_schema = key_col_usage.constraint_schema
+                AND constr_col_usage.constraint_name = key_col_usage.constraint_name
+                AND constr_col_usage.column_name = key_col_usage.column_name
+                AND constr.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+            LEFT JOIN information_schema.constraint_column_usage constr_col_usage_fk
+                ON constr_col_usage_fk.constraint_catalog = key_col_usage.constraint_catalog
+                AND constr_col_usage_fk.constraint_schema = key_col_usage.constraint_schema
+                AND constr_col_usage_fk.constraint_name = key_col_usage.constraint_name
+                AND constr.constraint_type IN ('FOREIGN KEY')
+        WHERE 
+            col.table_schema = 'public'
+            AND col.table_name IN ({table_names});        
     """
 
-    DISABLE_TRIGGERS_SQL_TEMPLATE = "update pg_trigger set tgenabled='D' ;"
+    DISABLE_TRIGGERS_SQL_TEMPLATE = "UPDATE pg_trigger SET tgenabled='D' ;"
 
-    ENABLE_TRIGGERS_SQL_TEMPLATE = "update pg_trigger set tgenabled='O' ;"
+    ENABLE_TRIGGERS_SQL_TEMPLATE = "UPDATE pg_trigger SET tgenabled='O' ;"
 
     SERIAL_SEQUENCE_SQL_TEMPLATE = """
-        select pg_get_serial_sequence('{table_name}', '{pk_column_name}');
+        SELECT pg_get_serial_sequence('"{table_name}"', '{pk_column_name}');
     """
 
     SET_SEQUENCE_VALUE_SQL_TEMPLATE = """
-        select setval('{seq_name}', {seq_val});
+        SELECT setval('{seq_name}', {seq_val});
     """
 
     SELECT_TABLE_COLUMN_VALUES_TEMPLATE = """
-        select "{constraint_column_name}"  from "{table_name}" {where_conditions};
+        SELECT "{constraint_column_name}" FROM "{table_name}" {where_conditions};
     """
 
     COUNT_ALL_SQL_TEMPLATE = """
-        select count(*), {max_pk_value_sql} from "{table_name}";
+        SELECT count(*), {max_pk_value_sql} FROM "{table_name}";
     """
 
     TRANSFER_SQL_TEMPLATE = """
-        insert into "public"."{table_name}" ({selection_params_commas})
-        select {selection_params_commas}
-        from "tmp_src_schema"."{table_name}"
-        where {pk_condition_sql}
-        returning "{primary_key}";"""
+        INSERT INTO "public"."{table_name}" ({selection_params_commas})
+        SELECT {selection_params_commas}
+        FROM "tmp_src_schema"."{table_name}" 
+        WHERE {pk_condition_sql}
+        RETURNING "{primary_key}";"""
 
     CONTENT_TYPE_TABLE_SQL_TEMPLATE = """
-        select "table_name", "app_label", "model"
-        from django_content_type_table;
+        SELECT "table_name", "app_label", "model"
+        FROM django_content_type_table;
     """
 
     CONTENT_TYPE_SQL_TEMPLATE = """
-        select "id", "app_label", "model"
-        from django_content_type;
+        SELECT "id", "app_label", "model"
+        FROM django_content_type;
     """
 
     @classmethod

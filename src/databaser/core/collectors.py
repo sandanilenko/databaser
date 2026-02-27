@@ -954,7 +954,21 @@ class GenericTablesCollector(BaseCollector):
         """
         logger.info('prepare content type tables')
 
-        content_type_table_list = await self._dst_database.fetch_raw_sql(SQLRepository.get_content_type_table_sql())
+        django_content_type_table = self._dst_database.tables.get('django_content_type_table')
+
+        if not django_content_type_table:
+            logger.debug(f'table django_content_type_table not found')
+            return
+
+        django_content_type = self._dst_database.tables.get('django_content_type')
+
+        if not django_content_type:
+            logger.debug(f'table django_content_type not found')
+            return
+
+        content_type_table_list = await self._dst_database.fetch_raw_sql(
+            SQLRepository.get_content_type_table_sql()
+        )
 
         content_type_table_dict = {
             (app_label, model): table_name for table_name, app_label, model in content_type_table_list
